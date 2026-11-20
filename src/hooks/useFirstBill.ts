@@ -282,11 +282,11 @@ export function useFirstBill() {
 
   /* ---------------- Scene 1: JOIN by text ---------------- */
 
-  const join = useCallback(async () => {
+  const join = useCallback(async (said = "JOIN") => {
     const myRun = run.current;
     setChips([]);
     if (turns.current.length === 0) push({ kind: "divider", lead: "Today", text: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
-    push({ kind: "text", from: "me", text: "JOIN" });
+    push({ kind: "text", from: "me", text: said });
     stage.current = "askName";
     setContactName("PayPing");
     await botSays(
@@ -1242,7 +1242,7 @@ export function useFirstBill() {
       // Carrier keywords always work.
       if (/^(stop|unsubscribe|cancel|quit|end|stopall)$/i.test(text)) return void stopAll(text);
       if (/^(start over|reset|restart)$/i.test(text)) return void reset();
-      if (/^(join|start|unstop)\b/i.test(text) && (st === "start" || st === "stopped" || ((st === "triageAsk" || st === "triageDone") && !onboard.current.firstName))) return void join();
+      if (/^(join|start|unstop)\b/i.test(text) && (st === "start" || st === "stopped" || ((st === "triageAsk" || st === "triageDone") && !onboard.current.firstName))) return void join(text);
       if (/^(help|info|menu|commands|\?+|what can you do\??|what do you do\??|what is this\??|who are you\??|how does this work\??)$/i.test(text))
         return void reply(text, [
           "I'm PayPing. I text you before a student loan bill or an overdraft hits, with one fix and what it costs. You say YES, I write the message, you send it. I never move money.",
