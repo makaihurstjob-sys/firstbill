@@ -1,7 +1,7 @@
 {
-  "name": "FirstBill",
-  "short_name": "FirstBill",
-  "description": "FirstBill texts new grads before a student loan bill goes wrong.",
+  "name": "Ping",
+  "short_name": "Ping",
+  "description": "Ping texts new grads before a student loan bill goes wrong.",
   "start_url": "./#phone",
   "scope": "./",
   "display": "standalone",

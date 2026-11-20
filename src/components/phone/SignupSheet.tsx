@@ -102,7 +102,7 @@ export function SignupSheet({ open, onClose, onDone, autofill }: { open: boolean
   if (!open) return null;
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col bg-ph-bg text-ph-ink animate-in slide-in-from-bottom-8 fade-in duration-300" role="dialog" aria-label="FirstBill setup">
+    <div className="absolute inset-0 z-30 flex flex-col bg-ph-bg text-ph-ink animate-in slide-in-from-bottom-8 fade-in duration-300" role="dialog" aria-label="Ping setup">
       {/* Safari-style top bar */}
       <div className="flex items-center gap-2 border-b border-ph-sep bg-ph-bar px-3 pb-2 pt-12">
         <button type="button" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-ph-out" aria-label="Close setup">
@@ -116,9 +116,9 @@ export function SignupSheet({ open, onClose, onDone, autofill }: { open: boolean
 
       <div className="no-scrollbar flex-1 overflow-y-auto px-5 pb-6 pt-5">
         <div className="flex items-center gap-2">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#0b6b52] font-display text-sm font-bold text-white">FB</span>
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#0b6b52] font-display text-sm font-bold text-white">P</span>
           <div>
-            <h2 className="font-display text-[22px] font-bold leading-tight">Set up FirstBill</h2>
+            <h2 className="font-display text-[22px] font-bold leading-tight">Set up Ping</h2>
             <p className="text-[13px] text-ph-sub">About 60 seconds. After this, it's all texts.</p>
           </div>
         </div>
@@ -233,7 +233,7 @@ export function SignupSheet({ open, onClose, onDone, autofill }: { open: boolean
               <span className="text-[13px] font-bold tracking-wide">PLAID · SANDBOX</span>
               <span className="w-8" />
             </div>
-            <p className="mt-3 text-[15px] font-semibold">FirstBill wants read-only access to your balances and upcoming bills.</p>
+            <p className="mt-3 text-[15px] font-semibold">Ping wants read-only access to your balances and upcoming bills.</p>
             <button type="button" onClick={connectBank} className="mt-4 flex w-full items-center gap-3 rounded-xl border border-[#ddd] px-3 py-3 text-left">
               <span className="grid h-9 w-9 place-items-center rounded-full bg-[#e8f0fe] text-[13px] font-bold text-[#1a56db]">FP</span>
               <span>

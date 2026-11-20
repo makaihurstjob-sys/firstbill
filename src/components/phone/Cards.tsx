@@ -32,8 +32,8 @@ export function LinkCard({ title, url, onOpen, brand = "firstbill" }: { title: s
         </div>
       ) : (
         <div className="flex h-24 items-center justify-center gap-2 bg-[#0b6b52] text-white">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 font-display text-lg font-bold">FB</span>
-          <span className="font-display text-xl font-bold tracking-tight">FirstBill</span>
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 font-display text-lg font-bold">P</span>
+          <span className="font-display text-xl font-bold tracking-tight">Ping</span>
         </div>
       )}
       <div className="px-3 py-2">
@@ -182,7 +182,7 @@ export function DraftCard({ to, text }: { to: string; text: string }) {
         </div>
         <p className="whitespace-pre-wrap px-3 py-2 text-[14px] leading-snug">{text}</p>
         <div className="flex items-center justify-between gap-2 border-t border-ph-sep px-3 py-2">
-          <span className="text-[11px] text-ph-sub">You send it. FirstBill never logs in.</span>
+          <span className="text-[11px] text-ph-sub">You send it. Ping never logs in.</span>
           <button
             type="button"
             onClick={copy}

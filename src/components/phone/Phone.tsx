@@ -32,7 +32,7 @@ function StatusBar() {
 }
 
 function Header({ name, full, onReset, onBack }: { name: string; full?: boolean; onReset?: () => void; onBack?: () => void }) {
-  const known = name === "FirstBill";
+  const known = name === "Ping";
   return (
     <div className={cn("relative z-10 border-b border-ph-sep bg-ph-bar pb-2 backdrop-blur", full ? "pt-[max(10px,env(safe-area-inset-top))]" : "pt-12")}>
       <div className="flex items-start justify-between px-3">
@@ -42,7 +42,7 @@ function Header({ name, full, onReset, onBack }: { name: string; full?: boolean;
         </button>
         <div className="flex flex-col items-center">
           <span className={cn("grid h-11 w-11 place-items-center rounded-full text-[15px] font-bold text-white", known ? "bg-[#0b6b52]" : "bg-gradient-to-b from-[#a5abb6] to-[#858b96]")}>
-            {known ? "FB" : "#"}
+            {known ? "P" : "#"}
           </span>
           <span className="mt-0.5 text-[12px] text-ph-ink">
             {name} <span className="text-ph-sub">›</span>
@@ -227,12 +227,12 @@ function AidFileSheet({ profile, onClose }: { profile: Profile; onClose: () => v
         </button>
       </div>
       <pre className="flex-1 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[12.5px] leading-[1.5] text-ph-ink">{lines.join("\n")}</pre>
-      <p className="px-4 pb-[max(12px,env(safe-area-inset-bottom))] text-[12px] text-ph-sub">What you sent FirstBill: the file StudentAid.gov gives you from Download My Aid Data. Sample record for the demo.</p>
+      <p className="px-4 pb-[max(12px,env(safe-area-inset-bottom))] text-[12px] text-ph-sub">What you sent Ping: the file StudentAid.gov gives you from Download My Aid Data. Sample record for the demo.</p>
     </div>
   );
 }
 
-/** Tap back: the Messages list. FirstBill on top; the rest are generic "money apps" that text everyone the same thing. Not tappable. */
+/** Tap back: the Messages list. Ping on top; the rest are generic "money apps" that text everyone the same thing. Not tappable. */
 const OTHERS = [
   { name: "Budget App", time: "Yesterday", text: "You spent money this week 📊 Open the app to see a pie chart about it.", unread: true },
   { name: "Cash Advance App", time: "Yesterday", text: "Short before payday? We can't tell you why, but here's $50. Tip optional* 🙂", unread: true },
@@ -255,9 +255,9 @@ function MessagesList({ full, last, onOpen }: { full?: boolean; last?: { text: s
       <div className="no-scrollbar flex-1 overflow-y-auto">
         <button type="button" onClick={onOpen} className={row}>
           <span className="mt-1 h-2.5 w-2.5 shrink-0" />
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0b6b52] text-[15px] font-bold text-white">FB</span>
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0b6b52] text-[15px] font-bold text-white">P</span>
           <span className="min-w-0 flex-1 border-b border-ph-sep pb-2.5">
-            <span className="flex justify-between"><b className="text-[16px] text-ph-ink">FirstBill</b><span className="text-[14px] text-ph-sub">now ›</span></span>
+            <span className="flex justify-between"><b className="text-[16px] text-ph-ink">Ping</b><span className="text-[14px] text-ph-sub">now ›</span></span>
             <span className="line-clamp-2 text-[14px] leading-snug text-ph-sub">{last?.text ?? "Text JOIN to start"}</span>
           </span>
         </button>
@@ -278,7 +278,7 @@ function MessagesList({ full, last, onOpen }: { full?: boolean; last?: { text: s
 
 function Typing() {
   return (
-    <div className="flex px-3 pb-2" aria-label="FirstBill is typing">
+    <div className="flex px-3 pb-2" aria-label="Ping is typing">
       <div className="bubble tail-bot flex items-center gap-1 rounded-[18px] bg-ph-in px-3.5 py-3">
         {[0, 1, 2].map((i) => (
           <span key={i} className="h-2 w-2 animate-dot rounded-full bg-ph-sub" style={{ animationDelay: `${i * 0.18}s` }} />
@@ -305,10 +305,10 @@ function PlaidSheet({ onClose, onDone }: { onClose: () => void; onDone: () => vo
           <PlaidLogo className="h-6 text-black" />
           <span className="w-9 text-right text-[11px] font-semibold text-[#888]">TEST</span>
         </div>
-        <p className="mt-4 text-[20px] font-bold leading-snug">FirstBill uses Plaid to connect your bank</p>
+        <p className="mt-4 text-[20px] font-bold leading-snug">Ping uses Plaid to connect your bank</p>
         <ul className="mt-3 space-y-2 text-[14px] leading-snug text-[#333]">
-          <li><b>Read-only.</b> Plaid and FirstBill can see your balance and bills. Neither can move your money.</li>
-          <li><b>Private.</b> Your login goes to your bank, not to FirstBill. Your data is never sold.</li>
+          <li><b>Read-only.</b> Plaid and Ping can see your balance and bills. Neither can move your money.</li>
+          <li><b>Private.</b> Your login goes to your bank, not to Ping. Your data is never sold.</li>
         </ul>
         <p className="mt-3 text-[12px] text-[#888]">Plaid Sandbox: a test bank with sample data.</p>
         <button type="button" onClick={go} className="mt-4 flex w-full items-center gap-3 rounded-xl border border-[#ddd] px-3 py-3 text-left">
@@ -492,10 +492,10 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
         >
           {api.msgs.length === 0 && (
             <div className="mx-6 mt-10 text-center text-ph-sub">
-              <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-2xl bg-[#0b6b52] font-display text-2xl font-bold text-white">FB</div>
+              <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-2xl bg-[#0b6b52] font-display text-2xl font-bold text-white">P</div>
               <p className="text-[17px] font-semibold text-ph-ink">Text JOIN to start</p>
               <p className="mt-6 text-[11px] text-ph-sub/70">Updated {new Date(__BUILD__).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</p>
-              <p className="mt-1 text-[14px] leading-snug">FirstBill texts you before a student loan bill goes wrong. No app.</p>
+              <p className="mt-1 text-[14px] leading-snug">Ping texts you before a student loan bill goes wrong. No app.</p>
             </div>
           )}
           {api.msgs.map((m, i) => (

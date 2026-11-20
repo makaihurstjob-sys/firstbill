@@ -62,11 +62,11 @@ export function DemoPanel({ api }: { api: FirstBillApi }) {
     <aside className="flex min-w-0 flex-col gap-4">
       <div>
         <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brand">Team Ambassadors · Oakwood University</div>
-        <h1 className="mt-1 font-display text-[40px] font-bold leading-[1.02] tracking-tight sm:text-[48px]">FirstBill</h1>
+        <h1 className="mt-1 font-display text-[40px] font-bold leading-[1.02] tracking-tight sm:text-[48px]">Ping</h1>
         <p className="mt-2 max-w-[46ch] text-[16px] leading-relaxed text-muted">
           A texting assistant for new and first-gen grads. It watches your student loans and your bank, texts you <i>before</i> a bill goes wrong, and drafts the fix you approve with one word: YES.
         </p>
-        <p className="mt-3 max-w-[46ch] border-l-2 border-brand pl-3 font-display text-[18px] font-semibold leading-snug">ChatGPT answers questions. FirstBill catches the ones you didn't know to ask.</p>
+        <p className="mt-3 max-w-[46ch] border-l-2 border-brand pl-3 font-display text-[18px] font-semibold leading-snug">ChatGPT answers questions. Ping catches the ones you didn't know to ask.</p>
       </div>
 
       <div className="grid gap-2 rounded-2xl border border-line bg-panel p-4">
@@ -96,7 +96,7 @@ export function DemoPanel({ api }: { api: FirstBillApi }) {
       <AiStatus api={api} />
 
       <div className="rounded-2xl border border-line bg-panel p-4">
-        <div className="text-[13px] font-semibold">Sandbox data FirstBill watches</div>
+        <div className="text-[13px] font-semibold">Sandbox data Ping watches</div>
         <p className="mt-1 text-[12px] text-muted">
           Bank data from: <b className="text-ink">{plaidLive ? "Plaid Sandbox (live)" : "Built-in copy of the Plaid Sandbox user"}</b>
         </p>
@@ -155,7 +155,7 @@ export function DemoPanel({ api }: { api: FirstBillApi }) {
             setPaste("");
           }}
         >
-          Send to FirstBill
+          Send to Ping
         </Button>
       </div>
 

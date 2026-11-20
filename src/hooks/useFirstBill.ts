@@ -181,10 +181,10 @@ export function useFirstBill() {
     if (turns.current.length === 0) push({ kind: "divider", lead: "Today", text: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
     push({ kind: "text", from: "me", text: "JOIN" });
     stage.current = "askName";
-    setContactName("FirstBill");
+    setContactName("Ping");
     await botSays(
       [
-        { kind: "text", from: "bot", text: "Hey! I'm FirstBill. I text you before a bill goes wrong. Free, no app." },
+        { kind: "text", from: "bot", text: "Hey! I'm Ping. I text you before a bill goes wrong. Free, no app." },
         { kind: "text", from: "bot", text: "What should I call you?" },
       ],
       myRun,
@@ -298,13 +298,13 @@ export function useFirstBill() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botSays, setChips]);
 
-  /* ---------------- Scene 2: the heads-up text FirstBill sends first ---------------- */
+  /* ---------------- Scene 2: the heads-up text Ping sends first ---------------- */
 
   const headsUp = useCallback(async () => {
     const myRun = run.current;
     const p = profile.current;
     setChips([]);
-    setContactName("FirstBill");
+    setContactName("Ping");
     // Realistic gap: the heads-up lands a couple of days after signup, not the second you finish.
     const later = addDays(today, GAP_DAYS);
     alert.current = { ...alert.current, graceDays: daysBetween(later, p.graceEnds) };
@@ -312,7 +312,7 @@ export function useFirstBill() {
     stage.current = "alerted";
     const a = alert.current;
     const opener = `Heads up, ${p.firstName}: your student loan grace period ends in ${a.graceDays} days.`;
-    setBanner({ title: "FirstBill", body: `${opener} Your first payment could overdraft you.` });
+    setBanner({ title: "Ping", body: `${opener} Your first payment could overdraft you.` });
     await sleep(reduceMotion() ? 300 : 2300);
     if (run.current !== myRun) return;
     setBanner(null);
@@ -446,12 +446,12 @@ export function useFirstBill() {
     const a = alert.current;
     setChips([]);
     stage.current = "boost";
-    push({ kind: "divider", text: `${fmtShort(p.payday)} · Payday`, sub: "FirstBill texts first" });
+    push({ kind: "divider", text: `${fmtShort(p.payday)} · Payday`, sub: "Ping texts first" });
     const b = boostMath(p, a.payment, BOOST);
     const b50 = boostMath(p, a.payment, 50);
     const left = afterPayday(p, a.payment);
     const opener = `Your paycheck landed. Want to pay your loan off sooner?`;
-    setBanner({ title: "FirstBill", body: opener });
+    setBanner({ title: "Ping", body: opener });
     await sleep(reduceMotion() ? 300 : 1800);
     if (run.current !== myRun) return;
     setBanner(null);
@@ -598,7 +598,7 @@ export function useFirstBill() {
     await sleep(60);
     const myRun = run.current;
     const n = makeSampleNotice(today);
-    setContactName("FirstBill");
+    setContactName("Ping");
     push([
       { kind: "divider", text: "Example 2", sub: "A grad who's already behind forwards a letter" },
       { kind: "notice", from: "me", title: n.title, servicer: n.servicer, text: n.text },
@@ -613,7 +613,7 @@ export function useFirstBill() {
     async (text: string) => {
       const t = text.trim();
       if (!t) return;
-      setContactName("FirstBill");
+      setContactName("Ping");
       push({ kind: "notice", from: "me", title: "Forwarded notice", servicer: "Pasted text", text: t });
       await runDecode(t, null);
     },
@@ -640,14 +640,14 @@ export function useFirstBill() {
       return a.status === "overdraft"
         ? `You can! But your ${p.upcoming.map((u) => u.label.toLowerCase()).join(" and ")} hit before payday, so you'd go ${money(-a.low)} below zero and could get an overdraft fee or a bounced payment. Moving the date costs nothing.`
         : `You can, and you'd be fine. You'd still have ${money(a.low)} before payday.`;
-    if (/^(hi|hey|hello|yo|sup)\b/.test(s)) return "Hey! I'm FirstBill. I watch your student loans and bills so nothing surprises you.";
+    if (/^(hi|hey|hello|yo|sup)\b/.test(s)) return "Hey! I'm Ping. I watch your student loans and bills so nothing surprises you.";
     if (/thank|thx|ty\b/.test(s)) return "Anytime.";
     if (/capitaliz/.test(s)) return "Capitalization is when unpaid interest gets added to your loan balance. Then you pay interest on that interest. Paying the interest before it happens avoids it.";
     if (/defer/.test(s)) return "Deferment and forbearance both pause payments. In a deferment, the government may cover interest on subsidized loans. In a forbearance, interest always keeps adding up.";
-    if (/(cost|price|fee|free|pay for)/.test(s) && /(you|firstbill|this)/.test(s)) return "FirstBill is free. No fees, no ads, no credit offers, and we never sell your data.";
+    if (/(cost|price|fee|free|pay for)/.test(s) && /(you|firstbill|this)/.test(s)) return "Ping is free. No fees, no ads, no credit offers, and we never sell your data.";
     if (/(human|real person|robot|\bbot\b|\bai\b|chatgpt)/.test(s)) return "I'm an automated assistant. Code does all the money math. AI only helps explain things in plain English. You approve everything.";
     if (/plaid|bank|read.?only|move (my )?money|login|password/.test(s)) return "Your bank link is read-only through Plaid. I can see balances and bills, never move money, and I never see your password. You can also skip it and just text me your numbers.";
-    if (/what is this|what'?s this|what is firstbill|who are you|what do you do/.test(s)) return "I'm FirstBill. I text you before a student loan bill or an overdraft hits, and suggest one fix with its cost. Free, no app. I never move money.";
+    if (/what is this|what'?s this|what is firstbill|who are you|what do you do/.test(s)) return "I'm Ping. I text you before a student loan bill or an overdraft hits, and suggest one fix with its cost. Free, no app. I never move money.";
     if (/joke|lol|lmao|haha|funny/.test(s)) return "😄 I'm better at bills than jokes.";
     if (/grace/.test(s)) return "A grace period is the 6 months after you leave school before payments start. Interest on your unsubsidized loans still adds up during it.";
     if (/forbear/.test(s)) return "A forbearance is a pause your servicer approves. It can cover months you already missed, so your account counts as caught up. Interest still adds up, so save it for emergencies.";
@@ -703,7 +703,7 @@ export function useFirstBill() {
     async (text: string, parsed: NonNullable<ReturnType<typeof parseTriage>>) => {
       const myRun = run.current;
       setChips([]);
-      setContactName("FirstBill");
+      setContactName("Ping");
       push({ kind: "text", from: "me", text });
       const pl = triage(parsed.cash, parsed.bills);
       plan.current = pl;
@@ -782,7 +782,7 @@ export function useFirstBill() {
       push({ kind: "text", from: "me", text: me });
       stage.current = "start";
       onboard.current = { firstName: "", payday: 18 };
-      const ok = await botSays([{ kind: "text", from: "bot", text: "You're unsubscribed from FirstBill. No more texts. Text JOIN anytime to come back." }], myRun);
+      const ok = await botSays([{ kind: "text", from: "bot", text: "You're unsubscribed from Ping. No more texts. Text JOIN anytime to come back." }], myRun);
       if (ok) setChips([startChip]);
     },
     [botSays, push, setChips, startChip],
@@ -808,7 +808,7 @@ export function useFirstBill() {
       if (/^(join|start|unstop)\b/i.test(text) && (st === "start" || st === "stopped" || ((st === "triageAsk" || st === "triageDone") && !onboard.current.firstName))) return void join();
       if (/^(help|info|menu|commands|\?+|what can you do\??|what do you do\??|what is this\??|who are you\??|how does this work\??)$/i.test(text))
         return void reply(text, [
-          "I'm FirstBill. I text you before a student loan bill or an overdraft hits, with one fix and what it costs. You say YES, I write the message, you send it. I never move money.",
+          "I'm Ping. I text you before a student loan bill or an overdraft hits, with one fix and what it costs. You say YES, I write the message, you send it. I never move money.",
           "Short on cash right now? Text me your cash and bills, like: I have $180. Rent 550, card 40.",
           ...(nudge() && st !== "start" ? [nudge() as string] : ["Text JOIN to start, STOP to quit, START OVER to reset."]),
         ]);
@@ -822,7 +822,7 @@ export function useFirstBill() {
         case "start":
         case "stopped":
           if (isQuestion) return void ask(text);
-          return void reply(text, ["Hi! I'm FirstBill. I text you before a bill goes wrong. Free, no app.", "Text JOIN to start."]);
+          return void reply(text, ["Hi! I'm Ping. I text you before a bill goes wrong. Free, no app.", "Text JOIN to start."]);
         case "askName":
           if (/^(hi|hey|hello|yo|sup|hii+|heyy+|what'?s up)[!. ]*$/i.test(text)) return void reply(text, ["Hey! What should I call you?"]);
           if (isQuestion || text.split(/\s+/).length > 4) return void ask(text);
