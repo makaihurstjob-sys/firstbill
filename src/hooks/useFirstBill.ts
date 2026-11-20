@@ -56,7 +56,7 @@ const nid = () => `m${++idSeq}`;
 /** The check-ins PayPing promised ("I'll check on Dec 1…"), each one actually sent later. */
 type FuKey = "due" | "balance" | "triage" | "notice";
 type DueState = "asked" | "confirmed" | "pending" | "declined" | null;
-type Onboard = { firstName: string; payday: number; guess?: boolean };
+type Onboard = { firstName: string; payday: number; guess?: boolean; bankOffered?: boolean; bank?: boolean };
 const EXAMPLE = "I have $180. Rent 550, card 40, loan 310, electric 60";
 /** The whole conversation is saved in this browser, so leaving and coming back resumes it. Only Start over clears it. */
 const SAVE_KEY = "payping-chat-v1";
@@ -363,6 +363,21 @@ export function useFirstBill() {
     stage.current = "askBank";
     recompute({ firstName: onboard.current.firstName || "there", paydayDom: onboard.current.payday });
     const p = profile.current;
+    if (onboard.current.bank) {
+      stage.current = "signedUp";
+      const ok1 = await botSays(
+        [
+          { kind: "text", from: "bot", text: `Got it: ${p.loans.length} federal loans, ${money(totalBalance(p)).replace(".00", "")}, with ${p.servicer.split(" ")[0]}. Your grace period ends ${fmtShort(p.graceEnds)}.` },
+          { kind: "text", from: "bot", text: `You're set, ${p.firstName}. I'll only text when something needs you.` },
+        ],
+        myRun,
+      );
+      if (!ok1) return;
+      await sleep(reduceMotion() ? 200 : 1600);
+      if (run.current !== myRun) return;
+      await latest.current.headsUp();
+      return;
+    }
     const ok = await botSays(
       [
         { kind: "text", from: "bot", text: `Got it: ${p.loans.length} federal loans, ${money(totalBalance(p)).replace(".00", "")}, with ${p.servicer.split(" ")[0]}. Your grace period ends ${fmtShort(p.graceEnds)}.` },
@@ -377,12 +392,27 @@ export function useFirstBill() {
 
   const [plaidOpen, setPlaidOpen] = useState(false);
   const openPlaid = useCallback(() => {
-    if (stage.current === "askBank") setPlaidOpen(true);
+    if (stage.current === "askBank" || (stage.current === "askLoans" && onboard.current.bankOffered && !onboard.current.bank)) setPlaidOpen(true);
   }, []);
 
   const plaidDone = useCallback(async () => {
     const myRun = run.current;
     setPlaidOpen(false);
+    if (stage.current === "askLoans" && !onboard.current.bank) {
+      // Bank first, loans second: link it now, then ask for the aid file.
+      onboard.current.bank = true;
+      setChips([]);
+      const ok0 = await botSays(
+        [
+          { kind: "text", from: "bot", text: `Connected: checking ••${profile.current.checkingLast4} at First Platypus Bank.` },
+          ...(onboard.current.guess ? [{ kind: "text", from: "bot", text: `I can see your paychecks land on the ${ordinal(onboard.current.payday)}, so I'll use that.` } as MsgBody] : []),
+          { kind: "text", from: "bot", text: "Now send me your aid file and you're all set." },
+        ],
+        myRun,
+      );
+      if (ok0) setChips(chipsFor("askLoans"));
+      return false;
+    }
     if (stage.current !== "askBank") return false;
     setChips([]);
     stage.current = "signedUp";
@@ -1103,7 +1133,10 @@ export function useFirstBill() {
             { label: "Not sure", onPick: () => void L().answerPay(0, "Not sure") },
           ];
         case "askLoans":
-          return [{ label: "Attach my aid file", primary: true, onPick: () => void L().attachAid() }];
+          return [
+            { label: "Attach my aid file", primary: true, onPick: () => void L().attachAid() },
+            ...(onboard.current.bankOffered && !onboard.current.bank ? [{ label: "Connect my bank", onPick: () => void L().openPlaid() }] : []),
+          ];
         case "askBank":
           return [
             { label: "Connect my bank", primary: true, onPick: () => void L().openPlaid() },
@@ -1230,7 +1263,27 @@ export function useFirstBill() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  latest.current = { yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo, answerPay, attachAid, whereAid, openPlaid, skipBank, nudge, remind, declineFix, followUp, answerFollowUp, resumeStory, headsUp };
+  /** "Wait, I want to add my bank": link it now, then come back for the aid file. */
+  const bankFirst = useCallback(
+    async (said: string) => {
+      const myRun = run.current;
+      if (stage.current !== "askLoans") return;
+      setChips([]);
+      push({ kind: "text", from: "me", text: said });
+      onboard.current.bankOffered = true;
+      const ok = await botSays(
+        [
+          { kind: "text", from: "bot", text: "Sure, let's link it first. It's read-only through Plaid. I can see balances and bills, never move money." },
+          { kind: "link", from: "bot", title: "Connect your bank with Plaid", url: "secure.plaid.com", action: "plaid", brand: "plaid" },
+        ],
+        myRun,
+      );
+      if (ok) setChips(chipsFor("askLoans"));
+    },
+    [botSays, chipsFor, push, setChips],
+  );
+
+  latest.current = { bankFirst, yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo, answerPay, attachAid, whereAid, openPlaid, skipBank, nudge, remind, declineFix, followUp, answerFollowUp, resumeStory, headsUp };
 
   /** Anything typed into the composer. */
   const send = useCallback(
@@ -1282,6 +1335,7 @@ export function useFirstBill() {
           return void reply(text, ["Just the day of the month is fine, like 15. Or tap Not sure."]);
         }
         case "askLoans":
+          if (!onboard.current.bank && (/\b(add|link|connect|hook up|use|do)\b.*\b(bank|checking|plaid)\b|\bbank (first|now)\b|^(my )?bank\b/i.test(text))) return void latest.current.bankFirst(text);
           if (/where|how|find/i.test(text)) return void whereAid();
           if (/^(ok|okay|done|sent|here|attached|got it|k|uploaded)\b/i.test(text) || isYes) return void attachAid();
           return void ask(text);

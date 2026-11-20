@@ -192,7 +192,7 @@ function DraftBubble({ text, tail, tapback }: { text: string; tail: boolean; tap
   );
 }
 
-function AidFileSheet({ profile, onClose }: { profile: Profile; onClose: () => void }) {
+function AidFileSheet({ profile, onClose, full }: { profile: Profile; onClose: () => void; full?: boolean }) {
   const d = (x: Date) => `${String(x.getMonth() + 1).padStart(2, "0")}/${String(x.getDate()).padStart(2, "0")}/${x.getFullYear()}`;
   const begin = new Date(profile.graceEnds);
   begin.setDate(begin.getDate() + 1);
@@ -214,7 +214,7 @@ function AidFileSheet({ profile, onClose }: { profile: Profile; onClose: () => v
   ];
   return (
     <div className="absolute inset-0 z-40 flex flex-col bg-ph-bg" role="dialog" aria-label="MyStudentData.txt">
-      <div className="flex items-center justify-between border-b border-ph-sep bg-ph-bar px-3 pb-2 pt-[max(12px,env(safe-area-inset-top))]">
+      <div className={cn("flex items-center justify-between border-b border-ph-sep bg-ph-bar px-3 pb-2", full ? "pt-[max(12px,env(safe-area-inset-top))]" : "pt-14")}>
         <span className="w-14" />
         <span className="text-center">
           <b className="block text-[16px]">MyStudentData.txt</b>
@@ -649,7 +649,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
             }}
           />
         )}
-        {fileOpen && <AidFileSheet profile={api.profile} onClose={() => setFileOpen(false)} />}
+        {fileOpen && <AidFileSheet profile={api.profile} full={fullscreen} onClose={() => setFileOpen(false)} />}
         {api.plaidOpen && <PlaidSheet onClose={() => api.setPlaidOpen(false)} onDone={() => void api.plaidDone()} />}
       </div>
     </div>
