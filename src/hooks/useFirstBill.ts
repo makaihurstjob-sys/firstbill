@@ -753,7 +753,10 @@ export function useFirstBill() {
   /** "Can I afford it?" from the numbers we have: their Pay This First plan, or their linked checking. */
   const afford = useCallback((x: number, said: string): string[] => {
     const money = (n: number) => usd0(n);
-    const what = (said.match(/(?:afford|buy|get|spend on|for)\s+(?:a |an |some |new |the )*([a-z][a-z ]{1,24}?)(?:\s+for|\s+at|\s*\$|\?|$)/i)?.[1] ?? "that").trim();
+    const STOP = /^(a|an|the|it|this|that|some|new|me|my)$/i;
+    const after = said.match(/\d[\d,.]*\s*(?:dollars?|bucks)?\s+(?:on |for )?(?:a |an |some |new |the )?([a-z][a-z' ]{2,20}?)\s*(?:\?|\.|!|$|right now|today|this week)/i)?.[1]?.trim();
+    const before = said.match(/(?:afford|buy|get|spend on)\s+(?:a |an |some |new |the )*([a-z][a-z' ]{1,24}?)(?:\s+for|\s+at|\s*\$|\s*\d|\?|$)/i)?.[1]?.trim();
+    const what = [before, after].find((w) => w && !STOP.test(w) && !/dollars?|bucks/i.test(w)) ?? "that";
     const payday = `the ${ordinal(onboard.current.payday || profile.current.payday.getDate())}`;
     const pl = plan.current;
     if (pl) {
