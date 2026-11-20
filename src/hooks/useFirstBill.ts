@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatTurn, Decode } from "../../supabase/functions/_shared/firstbill-prompt";
 import { aiDecode, aiReply, detectAiMode, type AiMode } from "@/lib/firstbill/ai";
+import { parseTriage, triage, triageScript, triageTexts, type TriagePlan } from "@/lib/firstbill/triage";
 import {
   addDays,
   computeAlert,
@@ -42,7 +43,7 @@ export type Chip = { label: string; onPick: () => void; primary?: boolean };
 export type Banner = { title: string; body: string } | null;
 export type Source = "claude" | "backup" | null;
 
-type Stage = "start" | "stopped" | "askName" | "askPay" | "askLoans" | "askBank" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
+type Stage = "start" | "stopped" | "noBank" | "triageAsk" | "triageDone" | "askName" | "askPay" | "askLoans" | "askBank" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
 
 let idSeq = 0;
 const nid = () => `m${++idSeq}`;
@@ -98,6 +99,7 @@ export function useFirstBill() {
   const autoRef = useRef(false);
   const onboard = useRef<{ firstName: string; payday: number }>({ firstName: "", payday: 18 });
   const decodeCtl = useRef<AbortController | null>(null);
+  const plan = useRef<TriagePlan | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -260,7 +262,11 @@ export function useFirstBill() {
       ],
       myRun,
     );
-    if (ok) setChips([{ label: "Connect my bank", primary: true, onPick: () => void latest.current.openPlaid() }]);
+    if (ok)
+      setChips([
+        { label: "Connect my bank", primary: true, onPick: () => void latest.current.openPlaid() },
+        { label: "Skip, I'll text my numbers", onPick: () => void latest.current.skipBank() },
+      ]);
   }, [botSays, push, recompute, setChips]);
 
   const [plaidOpen, setPlaidOpen] = useState(false);
@@ -384,6 +390,21 @@ export function useFirstBill() {
     const myRun = run.current;
     setChips([]);
     push({ kind: "text", from: "me", text: "YES" });
+    if (stage.current === "triageAsk" && plan.current) {
+      const s = triageScript(plan.current, onboard.current.firstName, `the ${ordinal(onboard.current.payday || 18)}`);
+      stage.current = "triageDone";
+      if (!s) return;
+      const ok = await botSays(
+        [
+          { kind: "text", from: "bot", text: `Here's a message for your ${s.to.toLowerCase()}. Tap it to copy, then send it yourself.` },
+          { kind: "draft", from: "bot", to: s.to, text: s.text },
+          { kind: "text", from: "bot", text: "I'll check in tomorrow to see how it went." },
+        ],
+        myRun,
+      );
+      if (ok) setChips([{ label: "Start over", onPick: () => void latest.current.reset() }]);
+      return;
+    }
     if (stage.current === "noticeAsk" && decode.current) {
       const d = decode.current;
       stage.current = "noticeDrafted";
@@ -615,6 +636,15 @@ export function useFirstBill() {
       return a.status === "overdraft"
         ? `You can! But your ${p.upcoming.map((u) => u.label.toLowerCase()).join(" and ")} hit before payday, so you'd go ${money(-a.low)} below zero and could get an overdraft fee or a bounced payment. Moving the date costs nothing.`
         : `You can, and you'd be fine. You'd still have ${money(a.low)} before payday.`;
+    if (/^(hi|hey|hello|yo|sup)\b/.test(s)) return "Hey! I'm FirstBill. I watch your student loans and bills so nothing surprises you.";
+    if (/thank|thx|ty\b/.test(s)) return "Anytime.";
+    if (/capitaliz/.test(s)) return "Capitalization is when unpaid interest gets added to your loan balance. Then you pay interest on that interest. Paying the interest before it happens avoids it.";
+    if (/defer/.test(s)) return "Deferment and forbearance both pause payments. In a deferment, the government may cover interest on subsidized loans. In a forbearance, interest always keeps adding up.";
+    if (/(cost|price|fee|free|pay for)/.test(s) && /(you|firstbill|this)/.test(s)) return "FirstBill is free. No fees, no ads, no credit offers, and we never sell your data.";
+    if (/(human|real person|robot|\bbot\b|\bai\b|chatgpt)/.test(s)) return "I'm an automated assistant. Code does all the money math. AI only helps explain things in plain English. You approve everything.";
+    if (/plaid|bank|read.?only|move (my )?money|login|password/.test(s)) return "Your bank link is read-only through Plaid. I can see balances and bills, never move money, and I never see your password. You can also skip it and just text me your numbers.";
+    if (/what is this|what'?s this|what is firstbill|who are you|what do you do/.test(s)) return "I'm FirstBill. I text you before a student loan bill or an overdraft hits, and suggest one fix with its cost. Free, no app. I never move money.";
+    if (/joke|lol|lmao|haha|funny/.test(s)) return "😄 I'm better at bills than jokes.";
     if (/grace/.test(s)) return "A grace period is the 6 months after you leave school before payments start. Interest on your unsubsidized loans still adds up during it.";
     if (/forbear/.test(s)) return "A forbearance is a pause your servicer approves. It can cover months you already missed, so your account counts as caught up. Interest still adds up, so save it for emergencies.";
     if (/option|else/.test(s))
@@ -626,7 +656,7 @@ export function useFirstBill() {
     if (term) return `${term.term}: ${term.meaning}`;
     if (/delinquen/.test(s)) return "Delinquent just means behind on payments. It turns into a credit problem at 90 days late for federal loans.";
     if (/default/.test(s)) return "Default is 270 days late on a federal loan. Your whole balance can come due, and the government can take your tax refund and up to 15% of your take-home pay. Those collections are paused right now but can restart, so we fix things way before then.";
-    return "Good question. Right now I can explain this bill, your options, or what any word in it means. Try \"why not just pay it?\" or \"what's a grace period?\"";
+    return "I'm best with student loans and bills. Ask me about your payment or a word like \"forbearance\", text me your cash and bills, or text HELP.";
   }, []);
 
   const ask = useCallback(
@@ -647,6 +677,12 @@ export function useFirstBill() {
       }
       setTyping(false);
       push({ kind: "text", from: "bot", text: answer });
+      const nd = ["start", "askName", "askPay", "askLoans", "askBank", "noBank"].includes(stage.current) ? latest.current.nudge?.() : null;
+      if (nd && !answer.includes(nd)) {
+        await sleep(reduceMotion() ? 60 : 500);
+        if (run.current !== myRun) return;
+        push({ kind: "text", from: "bot", text: nd });
+      }
       if (/^stop\b/i.test(q)) {
         setChips([{ label: "JOIN", primary: true, onPick: () => { latest.current.reset(); void latest.current.join(); } }]);
         return;
@@ -657,31 +693,168 @@ export function useFirstBill() {
     [aiMode, cannedAnswer, contextText, push, setChips, useLive],
   );
 
-  latest.current = { yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo, answerPay, attachAid, whereAid, openPlaid };
+  /* ---------------- Pay This First: text your cash and bills, no bank link (SymStudio PRD) ---------------- */
+
+  const runTriage = useCallback(
+    async (text: string, parsed: NonNullable<ReturnType<typeof parseTriage>>) => {
+      const myRun = run.current;
+      setChips([]);
+      setContactName("FirstBill");
+      push({ kind: "text", from: "me", text });
+      const pl = triage(parsed.cash, parsed.bills);
+      plan.current = pl;
+      stage.current = "triageAsk";
+      const ok = await botSays(triageTexts(pl).map((t) => ({ kind: "text", from: "bot", text: t }) as MsgBody), myRun);
+      if (!ok) return;
+      setChips([
+        ...(pl.scriptFor ? [{ label: "YES", primary: true, onPick: () => void latest.current.yes() }] : []),
+        { label: "What's a forbearance?", onPick: () => void latest.current.ask("What's a forbearance?") },
+      ]);
+    },
+    [botSays, push, setChips],
+  );
+
+  const skipBank = useCallback(async () => {
+    const myRun = run.current;
+    if (stage.current !== "askBank") return;
+    setChips([]);
+    push({ kind: "text", from: "me", text: "Skip, I'll text my numbers" });
+    stage.current = "noBank";
+    await botSays(
+      [
+        { kind: "text", from: "bot", text: "No problem. No bank link needed. Nothing is stored." },
+        { kind: "text", from: "bot", text: "When money's tight, text me your cash and bills, like:\nI have $180. Rent 550, card 40, loan 310, electric 60" },
+      ],
+      myRun,
+    );
+    if (run.current === myRun) setChips([{ label: "Try that example", primary: true, onPick: () => void latest.current.send("I have $180. Rent 550, card 40, loan 310, electric 60") }]);
+  }, [botSays, push, setChips]);
+
+  /** What to say to bring someone back to the step they're on. */
+  const nudge = useCallback((): string | null => {
+    switch (stage.current) {
+      case "start":
+      case "stopped":
+        return "Text JOIN to get started.";
+      case "askName":
+        return "What should I call you?";
+      case "askPay":
+        return "What day do you get paid? Just the day, like 15.";
+      case "askLoans":
+        return "Tap + to send me your aid file.";
+      case "askBank":
+        return "Tap Connect your bank when you're ready, or skip it.";
+      case "alerted":
+        return "Reply YES and I'll write the due date request.";
+      case "boost":
+        return `Reply YES to add ${money(BOOST).replace(".00", "")} a month, or Not now.`;
+      case "noticeAsk":
+      case "triageAsk":
+        return "Reply YES and I'll write the message for you.";
+      case "noBank":
+        return "Text me your cash and bills, like: I have $180. Rent 550, card 40.";
+      default:
+        return null;
+    }
+  }, []);
+
+  /** A fixed reply (no AI), then the step's nudge, keeping the quick replies. */
+  const reply = useCallback(
+    async (me: string, lines: string[]) => {
+      const myRun = run.current;
+      const keep = chipsRef.current;
+      setChips([]);
+      push({ kind: "text", from: "me", text: me });
+      const ok = await botSays(lines.map((t) => ({ kind: "text", from: "bot", text: t }) as MsgBody), myRun);
+      if (ok) setChips(keep);
+    },
+    [botSays, push, setChips],
+  );
+
+  const stopAll = useCallback(
+    async (me: string) => {
+      const myRun = run.current;
+      setChips([]);
+      push({ kind: "text", from: "me", text: me });
+      stage.current = "start";
+      onboard.current = { firstName: "", payday: 18 };
+      const ok = await botSays([{ kind: "text", from: "bot", text: "You're unsubscribed from FirstBill. No more texts. Text JOIN anytime to come back." }], myRun);
+      if (ok) setChips([startChip]);
+    },
+    [botSays, push, setChips, startChip],
+  );
+
+  latest.current = { yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo, answerPay, attachAid, whereAid, openPlaid, skipBank, nudge };
 
   /** Anything typed into the composer. */
   const send = useCallback(
     async (raw: string) => {
-      const text = raw.trim();
+      const text = raw.trim().slice(0, 1200);
       if (!text || busy) return;
-      if (/^join\b/i.test(text) && stage.current === "start") return void join();
+      const st = stage.current;
+      const isYes = /^(yes|y|ya|yea|yes please|yep|yup|yeah|ok|okay|sure|do it|bet|please|👍|✅|👌)[.!]*$/i.test(text);
+      const isNo = /^(no|nah|nope|not now|later|n)[.!]*$/i.test(text);
+      const isQuestion = /\?\s*$/.test(text) || /^(what|why|how|who|is|are|can|do|does|where|when|wtf|huh|wait)\b/i.test(text);
+      const letters = text.toLowerCase().replace(/[^a-z]/g, "");
+      const gibberish = (!letters && !/\d/.test(text) && !isYes) || (letters.length >= 6 && !/[aeiouy]/.test(letters)) || /[bcdfghjklmnpqrstvwxz]{6,}/.test(letters);
+
+      // Carrier keywords always work.
+      if (/^(stop|unsubscribe|cancel|quit|end|stopall)$/i.test(text)) return void stopAll(text);
       if (/^(start over|reset|restart)$/i.test(text)) return void reset();
-      if (stage.current === "askName") return void answerName(text);
-      if (stage.current === "askPay") {
-        const n = text.match(/\d{1,2}/);
-        const d = n ? +n[0] : /first/i.test(text) ? 1 : /fifteen/i.test(text) ? 15 : /eighteen/i.test(text) ? 18 : /not sure|idk|don.?t know|every|bi.?weekly/i.test(text) ? 0 : -1;
-        if (d >= 0) return void latest.current.answerPay(d, text);
+      if (/^(join|start|unstop)\b/i.test(text) && (st === "start" || st === "stopped")) return void join();
+      if (/^(help|info|menu|commands|\?+|what can you do\??|what do you do\??|what is this\??|who are you\??|how does this work\??)$/i.test(text))
+        return void reply(text, [
+          "I'm FirstBill. I text you before a student loan bill or an overdraft hits, with one fix and what it costs. You say YES, I write the message, you send it. I never move money.",
+          "Short on cash right now? Text me your cash and bills, like: I have $180. Rent 550, card 40.",
+          ...(nudge() && st !== "start" ? [nudge() as string] : ["Text JOIN to start, STOP to quit, START OVER to reset."]),
+        ]);
+      if (gibberish) return void reply(text, ["Sorry, I didn't catch that.", nudge() ?? "Text HELP to see what I can do."]);
+
+      // Pay This First works anytime outside the first two setup questions.
+      const tri = st !== "askName" && st !== "askPay" ? parseTriage(text) : null;
+      if (tri) return void runTriage(text, tri);
+
+      switch (st) {
+        case "start":
+        case "stopped":
+          if (isQuestion) return void ask(text);
+          return void reply(text, ["Hi! I'm FirstBill. I text you before a bill goes wrong. Free, no app.", "Text JOIN to start."]);
+        case "askName":
+          if (/^(hi|hey|hello|yo|sup|hii+|heyy+|what'?s up)[!. ]*$/i.test(text)) return void reply(text, ["Hey! What should I call you?"]);
+          if (isQuestion || text.split(/\s+/).length > 4) return void ask(text);
+          return void answerName(text);
+        case "askPay": {
+          const n = text.match(/\d{1,2}/);
+          const d = n ? +n[0] : /first/i.test(text) ? 1 : /fifteen/i.test(text) ? 15 : /eighteen/i.test(text) ? 18 : /not sure|idk|don.?t know|every|bi.?weekly|weekly/i.test(text) ? 0 : -1;
+          if (d >= 0) return void latest.current.answerPay(d, text);
+          if (isQuestion) return void ask(text);
+          return void reply(text, ["Just the day of the month is fine, like 15. Or tap Not sure."]);
+        }
+        case "askLoans":
+          if (/where|how|find/i.test(text)) return void whereAid();
+          if (/^(ok|okay|done|sent|here|attached|got it|k|uploaded)\b/i.test(text) || isYes) return void attachAid();
+          return void ask(text);
+        case "askBank":
+          if (/^(skip|no|nah|rather not|i'?d rather not)\b/i.test(text)) return void skipBank();
+          if (/^(ok|okay|connect|link|done|sure|go)\b/i.test(text) || isYes) return void openPlaid();
+          return void ask(text);
+        case "alerted":
+        case "noticeAsk":
+        case "triageAsk":
+          if (isYes) return void yes();
+          if (isNo) return void reply(text, ["No problem. Reply YES anytime and I'll write it."]);
+          break;
+        case "boost":
+          if (isYes) return void latest.current.boostYes();
+          if (isNo) return void latest.current.boostNo();
+          break;
       }
-      if (stage.current === "askLoans" && /where|how|find|what/i.test(text)) return void whereAid();
-      if (stage.current === "askLoans") return void attachAid();
-      if (stage.current === "askBank") return void openPlaid();
-      if (/^(yes|y|yes please|yep|yeah|ok|okay|do it|bet)[.!]*$/i.test(text) && (stage.current === "alerted" || stage.current === "noticeAsk")) return void yes();
-      if (/^(start over|reset|restart)$/i.test(text)) return void reset();
       if (looksLikeNotice(text)) return void pasteNotice(text);
       return void ask(text);
     },
-    [ask, busy, join, pasteNotice, reset, yes, answerName, attachAid, whereAid, openPlaid],
+    [ask, busy, join, pasteNotice, reset, yes, answerName, attachAid, whereAid, openPlaid, nudge, reply, runTriage, skipBank, stopAll],
   );
+  latest.current.send = send;
 
   /* ---------------- Hands-free demo for screen recording ---------------- */
 

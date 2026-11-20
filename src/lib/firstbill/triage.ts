@@ -50,7 +50,7 @@ export function parseTriage(text: string): { cash: number; bills: TriageBill[] }
     const amount = n(m[2] ?? m[3] ?? "0");
     const kind = classify(label);
     if (!kind || !amount) continue;
-    const pretty = kind === "card" ? "card minimum" : kind === "federal" ? "student loan" : label.split(" ").slice(-2).join(" ");
+    const pretty = kind === "card" ? "card minimum" : kind === "federal" ? "student loan" : label.toLowerCase().split(" ").slice(-2).join(" ");
     bills.push({ kind, label: pretty || NICE[kind], amount });
   }
   return bills.length ? { cash, bills } : null;
