@@ -31,15 +31,15 @@ function StatusBar() {
   );
 }
 
-function Header({ name, full, onReset }: { name: string; full?: boolean; onReset?: () => void }) {
+function Header({ name, full, onReset, onBack }: { name: string; full?: boolean; onReset?: () => void; onBack?: () => void }) {
   const known = name === "FirstBill";
   return (
     <div className={cn("relative z-10 border-b border-ph-sep bg-ph-bar pb-2 backdrop-blur", full ? "pt-[max(10px,env(safe-area-inset-top))]" : "pt-12")}>
       <div className="flex items-start justify-between px-3">
-        <span className="flex items-center text-[17px] text-ph-out">
+        <button type="button" onClick={onBack} className="flex items-center text-[17px] text-ph-out" aria-label="Back to Messages">
           <ChevronLeft className="h-6 w-6" />
-          <span className="-ml-1 rounded-full bg-ph-out px-1.5 text-[12px] font-semibold leading-5 text-ph-out-ink">3</span>
-        </span>
+          <span className="-ml-1 rounded-full bg-ph-out px-1.5 text-[12px] font-semibold leading-5 text-ph-out-ink">5</span>
+        </button>
         <div className="flex flex-col items-center">
           <span className={cn("grid h-11 w-11 place-items-center rounded-full text-[15px] font-bold text-white", known ? "bg-[#0b6b52]" : "bg-gradient-to-b from-[#a5abb6] to-[#858b96]")}>
             {known ? "FB" : "#"}
@@ -232,6 +232,50 @@ function AidFileSheet({ profile, onClose }: { profile: Profile; onClose: () => v
   );
 }
 
+/** Tap back: the Messages list. FirstBill on top; the rest are generic "money apps" that text everyone the same thing. Not tappable. */
+const OTHERS = [
+  { name: "Budget App", time: "Yesterday", text: "You spent money this week 📊 Open the app to see a pie chart about it.", unread: true },
+  { name: "Cash Advance App", time: "Yesterday", text: "Short before payday? We can't tell you why, but here's $50. Tip optional* 🙂", unread: true },
+  { name: "Your Bank", time: "Tuesday", text: "Your statement is ready. It's 14 pages. Good luck!", unread: false },
+  { name: "Credit Score App", time: "Monday", text: "Your score went up 2 points! 🎉 Here are 9 credit cards to celebrate.", unread: true },
+  { name: "Pre-Approved!!", time: "Sunday", text: "Congrats {FIRST_NAME}, you're pre-approved for something!", unread: true },
+  { name: "Finance Influencer", time: "11/14", text: "Just stop buying coffee and you'll be a millionaire by 30 ☕️", unread: false },
+];
+
+function MessagesList({ full, last, onOpen }: { full?: boolean; last?: { text: string }; onOpen: () => void }) {
+  const row = "flex w-full gap-3 px-4 py-2.5 text-left";
+  return (
+    <div className="absolute inset-0 z-30 flex flex-col bg-ph-bg" role="dialog" aria-label="Messages">
+      <div className={cn("flex items-center justify-between px-4 text-[17px] text-ph-out", full ? "pt-[max(12px,env(safe-area-inset-top))]" : "pt-14")}>
+        <span>Edit</span>
+        <button type="button" onClick={onOpen} className="text-[15px]">Done</button>
+      </div>
+      <h2 className="px-4 pb-2 pt-1 text-[34px] font-bold tracking-tight text-ph-ink">Messages</h2>
+      <div className="mx-4 mb-2 rounded-[10px] bg-ph-in px-3 py-1.5 text-[16px] text-ph-sub">Search</div>
+      <div className="no-scrollbar flex-1 overflow-y-auto">
+        <button type="button" onClick={onOpen} className={row}>
+          <span className="mt-1 h-2.5 w-2.5 shrink-0" />
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0b6b52] text-[15px] font-bold text-white">FB</span>
+          <span className="min-w-0 flex-1 border-b border-ph-sep pb-2.5">
+            <span className="flex justify-between"><b className="text-[16px] text-ph-ink">FirstBill</b><span className="text-[14px] text-ph-sub">now ›</span></span>
+            <span className="line-clamp-2 text-[14px] leading-snug text-ph-sub">{last?.text ?? "Text JOIN to start"}</span>
+          </span>
+        </button>
+        {OTHERS.map((o) => (
+          <div key={o.name} className={row} aria-disabled>
+            <span className={cn("mt-4 h-2.5 w-2.5 shrink-0 rounded-full", o.unread && "bg-ph-out")} />
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-b from-[#a5abb6] to-[#858b96] text-[15px] font-semibold text-white">{o.name[0]}</span>
+            <span className="min-w-0 flex-1 border-b border-ph-sep pb-2.5">
+              <span className="flex justify-between"><b className="text-[16px] text-ph-ink">{o.name}</b><span className="text-[14px] text-ph-sub">{o.time}</span></span>
+              <span className="line-clamp-2 text-[14px] leading-snug text-ph-sub">{o.text}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Typing() {
   return (
     <div className="flex px-3 pb-2" aria-label="FirstBill is typing">
@@ -361,10 +405,46 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
     }
   };
 
-  useEffect(() => {
+  // Like iMessage: follow new texts only if you're already at the bottom. Scrolled up? Show a "New message" pill instead.
+  const stick = useRef(true);
+  const progUntil = useRef(0);
+  const prevLen = useRef(0);
+  const [pill, setPill] = useState(false);
+  const toBottom = (smooth = true) => {
     const el = scroller.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (!el) return;
+    progUntil.current = Date.now() + 700;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    stick.current = true;
+    setPill(false);
+  };
+  const onScroll = () => {
+    const el = scroller.current;
+    if (!el) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
+      stick.current = true;
+      setPill(false);
+    } else if (Date.now() > progUntil.current) stick.current = false;
+  };
+  const userScroll = () => {
+    progUntil.current = 0;
+  };
+  useEffect(() => {
+    const grew = api.msgs.length > prevLen.current;
+    prevLen.current = api.msgs.length;
+    if (!api.msgs.length) {
+      stick.current = true;
+      setPill(false);
+      return;
+    }
+    const last = api.msgs[api.msgs.length - 1];
+    const mine = last && "from" in last && last.from === "me";
+    if (stick.current || (grew && mine)) toBottom();
+    else if (grew) setPill(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.msgs.length, api.typing, api.chips.length]);
+  const [listOpen, setListOpen] = useState(false);
+  const lastBotText = [...api.msgs].reverse().find((m) => m.kind === "text" && m.from === "bot") as { text: string } | undefined;
 
   const submit = () => {
     if (!draft.trim()) return;
@@ -386,12 +466,16 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
           </>
         )}
         {api.banner && <NotificationBanner title={api.banner.title} body={api.banner.body} full={fullscreen} />}
-        <Header name={api.contactName} full={fullscreen} onReset={() => api.reset()} />
+        <Header name={api.contactName} full={fullscreen} onReset={() => api.reset()} onBack={() => setListOpen(true)} />
+        {listOpen && <MessagesList full={fullscreen} last={lastBotText} onOpen={() => setListOpen(false)} />}
 
         <div
           ref={scroller}
           className="no-scrollbar flex-1 overflow-y-auto pt-3"
           aria-live="polite"
+          onScroll={onScroll}
+          onWheel={userScroll}
+          onTouchStart={userScroll}
           onPointerDown={startPress}
           onPointerMove={movePress}
           onPointerUp={endPress}
@@ -420,6 +504,17 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
           {api.typing && <Typing />}
           <div className="h-2" />
         </div>
+        {pill && (
+          <div className="relative z-20 h-0">
+            <button
+              type="button"
+              onClick={() => toBottom()}
+              className="absolute -top-12 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-ph-bar px-3 py-1.5 text-[13px] font-semibold text-ph-out shadow-md backdrop-blur"
+            >
+              New message ↓
+            </button>
+          </div>
+        )}
 
         {api.chips.length > 0 && (
           <div className="no-scrollbar flex gap-2 overflow-x-auto px-3 pb-2 pt-1">
