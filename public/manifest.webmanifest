@@ -1,7 +1,7 @@
 {
-  "name": "Ping",
-  "short_name": "Ping",
-  "description": "Ping texts new grads before a student loan bill goes wrong.",
+  "name": "PayPing",
+  "short_name": "PayPing",
+  "description": "PayPing texts new grads before a student loan bill goes wrong.",
   "start_url": "./#phone",
   "scope": "./",
   "display": "standalone",
