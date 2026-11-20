@@ -35,18 +35,29 @@ export type MsgBody =
   | { kind: "bank"; from: "bot"; amount: number; balance: number; last4: string; payday: string }
   | { kind: "draft"; from: "bot"; to: string; text: string }
   | { kind: "file"; from: "me"; name: string; size: string }
-  | { kind: "divider"; text: string; sub?: string };
+  | { kind: "divider"; text: string; lead?: string; sub?: string };
 export type Msg = MsgBody & { id: string };
 
 export type Chip = { label: string; onPick: () => void; primary?: boolean };
 export type Banner = { title: string; body: string } | null;
 export type Source = "claude" | "backup" | null;
 
-type Stage = "start" | "askName" | "askPay" | "askLoans" | "askBank" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
+type Stage = "start" | "stopped" | "askName" | "askPay" | "askLoans" | "askBank" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
 
 let idSeq = 0;
 const nid = () => `m${++idSeq}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const GAP_DAYS = 2;
+const signed = (n: number) => (n < 0 ? `-${money(-n)}` : money(n));
+/** The checking breakdown as a plain text message, the way a real text would show it. */
+function breakdown(p: Profile, a: Alert) {
+  const lines = [`Your checking, next few weeks:`, `Today ${money(p.balance)}`];
+  const short = (l: string) => l.replace(/first loan payment|student loan.*/i, "Loan").replace(/ bill$/i, "").replace(/car insurance/i, "Car ins.");
+  const m0 = (n: number) => money(n).replace(".00", "");
+  for (const r of a.rows) lines.push(`${fmtShort(r.date)} ${short(r.label)} ${m0(r.amount)} → ${signed(r.after)}${r.after < 0 ? " ⚠️" : ""}`);
+  lines.push(`${fmtShort(p.payday)} Payday +${m0(p.paycheck)}`);
+  return lines.join("\n");
+}
 const reduceMotion = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 export interface SignupInfo {
@@ -163,6 +174,7 @@ export function useFirstBill() {
   const join = useCallback(async () => {
     const myRun = run.current;
     setChips([]);
+    if (turns.current.length === 0) push({ kind: "divider", lead: "Today", text: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
     push({ kind: "text", from: "me", text: "JOIN" });
     stage.current = "askName";
     setContactName("FirstBill");
@@ -266,12 +278,12 @@ export function useFirstBill() {
     const ok = await botSays(
       [
         { kind: "text", from: "bot", text: `Connected: checking ••${p.checkingLast4} at First Platypus Bank.` },
-        { kind: "text", from: "bot", text: `You're set, ${p.firstName}. I'll only text when something needs you. Checking your next few weeks now.` },
+        { kind: "text", from: "bot", text: `You're set, ${p.firstName}. I'll only text when something needs you.` },
       ],
       myRun,
     );
     if (!ok) return false;
-    await sleep(reduceMotion() ? 200 : autoRef.current ? 1400 : 1100);
+    await sleep(reduceMotion() ? 200 : autoRef.current ? 1800 : 1600);
     if (run.current !== myRun) return false;
     await headsUp();
     return run.current === myRun;
@@ -283,11 +295,14 @@ export function useFirstBill() {
   const headsUp = useCallback(async () => {
     const myRun = run.current;
     const p = profile.current;
-    const a = alert.current;
     setChips([]);
     setContactName("FirstBill");
-    push({ kind: "divider", text: `Today ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, sub: stage.current === "signedUp" ? "Right after signup" : undefined });
+    // Realistic gap: the heads-up lands a couple of days after signup, not the second you finish.
+    const later = addDays(today, GAP_DAYS);
+    alert.current = { ...alert.current, graceDays: daysBetween(later, p.graceEnds) };
+    push({ kind: "divider", lead: later.toLocaleDateString("en-US", { weekday: "long" }), text: "9:41 AM", sub: `${GAP_DAYS} days later` });
     stage.current = "alerted";
+    const a = alert.current;
     const opener = `Heads up, ${p.firstName}: your student loan grace period ends in ${a.graceDays} days.`;
     setBanner({ title: "FirstBill", body: `${opener} Your first payment could overdraft you.` });
     await sleep(reduceMotion() ? 300 : 2300);
@@ -301,7 +316,7 @@ export function useFirstBill() {
         from: "bot",
         text: `${money(a.payment)} comes out ${firstPullStr}. That leaves ${money(a.afterPull)} until payday.`,
       },
-      { kind: "timeline", from: "bot", alert: a, profile: p },
+      { kind: "text", from: "bot", text: breakdown(p, a) },
     ];
     if (a.status === "ok") {
       items.push({ kind: "text", from: "bot", text: `You're covered. Lowest point: ${money(a.low)}. I'll keep watching.` });
@@ -511,14 +526,29 @@ export function useFirstBill() {
         const since = sample ? daysBetween(sample.noticeDate, today) : 0;
         const lateToday = d.days_late + since;
         const daysLeft = threshold - lateToday;
-        items.push({ kind: "clock", from: "bot", daysLeft, lateToday, threshold, hitDate: iso(addDays(today, Math.max(daysLeft, 0))), federal });
+        items.push({
+          kind: "text",
+          from: "bot",
+          text:
+            daysLeft <= 0
+              ? `Credit clock: you're ${lateToday} days late. Past ${threshold}, so this can already show on your credit report. Acting now still stops it getting worse.`
+              : `Credit clock: you're ${lateToday} days late. ${federal ? "Federal loans" : "Most lenders"} report at ${threshold}. For you that's ${fmtShort(addDays(today, daysLeft))}, ${daysLeft} days from now.`,
+        });
       } else if (d.due_date) {
         const dd = fromISO(d.due_date);
         items.push({ kind: "text", from: "bot", text: `It's due ${fmtDate(dd)}, ${daysBetween(today, dd)} days from now.` });
       }
       const amt = d.amount_to_catch_up ?? d.monthly_payment;
       const p = profile.current;
-      if (amt) items.push({ kind: "bank", from: "bot", amount: amt, balance: p.balance, last4: p.checkingLast4, payday: fmtShort(p.payday) });
+      if (amt)
+        items.push({
+          kind: "text",
+          from: "bot",
+          text:
+            amt > p.balance
+              ? `Bank check: paying all ${money(amt)} today would overdraft checking ••${p.checkingLast4} by ${money(amt - p.balance)} before your ${fmtShort(p.payday)} paycheck. Don't pay it all right now.`
+              : `Bank check: you can cover ${money(amt)} and still have ${money(p.balance - amt)} until ${fmtShort(p.payday)}.`,
+        });
       items.push(
         { kind: "text", from: "bot", text: `Best next step: ${d.next_action}` },
         { kind: "text", from: "bot", text: `What it costs: ${d.cost_of_action}` },

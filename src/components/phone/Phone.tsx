@@ -96,7 +96,15 @@ function Row({ m, next, api }: { m: Msg; next?: Msg; api: FirstBillApi }) {
   if (m.kind === "divider") {
     return (
       <div className="pb-1 pt-3 text-center text-[12px] leading-4 text-ph-sub">
-        <b className="font-semibold">{m.text.split(" ")[0]}</b> {m.text.split(" ").slice(1).join(" ")}
+        {m.lead ? (
+          <>
+            <b className="font-semibold">{m.lead}</b> {m.text}
+          </>
+        ) : (
+          <>
+            <b className="font-semibold">{m.text.split(" ")[0]}</b> {m.text.split(" ").slice(1).join(" ")}
+          </>
+        )}
         {m.sub && <div className="mt-0.5 italic">{m.sub}</div>}
       </div>
     );
