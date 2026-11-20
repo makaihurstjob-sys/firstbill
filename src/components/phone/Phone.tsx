@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AudioLines, ChevronLeft, FileText, Plus, RotateCcw, Video } from "lucide-react";
+import { AudioLines, ChevronLeft, FileText, Plus, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FirstBillApi, Msg } from "@/hooks/useFirstBill";
 import { BankCard, ClockCard, LinkCard, NoticeAttachment, PayPingMark, PlaidLogo, TimelineCard } from "./Cards";
@@ -50,13 +50,9 @@ function Header({ name, full, onReset, onBack }: { name: string; full?: boolean;
             {name} <span className="text-ph-sub">›</span>
           </span>
         </div>
-        {full ? (
-          <button type="button" onClick={onReset} className="grid h-9 w-9 place-items-center rounded-full text-ph-out" aria-label="Start over">
-            <RotateCcw className="h-5 w-5" />
-          </button>
-        ) : (
-          <Video className="mt-1 h-6 w-6 text-ph-out" />
-        )}
+        <button type="button" onClick={onReset} className="grid h-9 w-9 place-items-center rounded-full text-ph-out" aria-label="Start over">
+          <RotateCcw className="h-5 w-5" />
+        </button>
       </div>
     </div>
   );

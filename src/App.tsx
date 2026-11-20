@@ -1,5 +1,4 @@
 import { Phone } from "@/components/phone/Phone";
-import { DemoPanel } from "@/components/DemoPanel";
 import { useFirstBill } from "@/hooks/useFirstBill";
 import { useEffect, useState } from "react";
 
@@ -30,17 +29,33 @@ function useVisibleArea(enabled: boolean) {
   return box;
 }
 
-/** Phone-only, full screen: on a phone, when opened from the Home Screen, or with #phone in the link. */
+/** Full screen app: on a phone, from the Home Screen, a narrow window, or #phone on a touch device (tablet). */
 function isPhoneOnly() {
   if (typeof window === "undefined") return false;
   const standalone = window.matchMedia?.("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  return standalone || /[#?&]phone\b/.test(window.location.href) || window.innerWidth < 640;
+  const touch = window.matchMedia?.("(pointer: coarse)").matches;
+  return standalone || window.innerWidth < 640 || (touch && /[#?&]phone\b/.test(window.location.href));
+}
+
+function usePhoneOnly() {
+  const [on, setOn] = useState(isPhoneOnly);
+  useEffect(() => {
+    const check = () => setOn(isPhoneOnly());
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  useEffect(() => {
+    // Desktop shows only the iPhone, front and center, on black.
+    document.documentElement.classList.toggle("desk", !on);
+  }, [on]);
+  return on;
 }
 
 export default function App() {
   const api = useFirstBill();
-  const box = useVisibleArea(isPhoneOnly());
-  if (isPhoneOnly()) {
+  const phoneOnly = usePhoneOnly();
+  const box = useVisibleArea(phoneOnly);
+  if (phoneOnly) {
     return (
       <div className="fixed inset-x-0 top-0 h-full bg-ph-bg" style={box ? { top: box.top, height: box.height } : undefined}>
         <Phone api={api} fullscreen />
@@ -48,10 +63,9 @@ export default function App() {
     );
   }
   return (
-    <main className="min-h-full px-[max(16px,env(safe-area-inset-left,0px))] py-6 sm:py-8">
-      <div className="mx-auto grid max-w-[1080px] items-start gap-8 lg:grid-cols-[402px_minmax(0,1fr)] lg:gap-12">
+    <main className="fixed inset-0 grid place-items-center overflow-hidden bg-black p-4">
+      <div className="w-[402px] max-w-full rounded-[58px] ring-1 ring-white/15">
         <Phone api={api} />
-        <DemoPanel api={api} />
       </div>
     </main>
   );
