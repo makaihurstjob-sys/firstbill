@@ -30,7 +30,7 @@ It jumps to **"Sunday 9:41 AM · 2 days later"**.
 
 - "Two days later, PayPing texts *first*. Your grace period ends Dec 2."
 - "Your first loan payment is **$310.39** and Meridian auto-pulls it **Dec 4**."
-- Point at the plain-text breakdown: "Then the phone bill and car insurance hit. You'd be **$23.21 short on Dec 11**. That's an overdraft fee, often $25 to $35."
+- Point at the one-line-per-bill texts: "Dec 4 the loan, Dec 7 the phone bill, Dec 11 car insurance. You'd be **$23.21 short on Dec 11**. That's an overdraft fee, often $25 to $35."
 - "It suggests one idea and asks: move the due date to the **20th**, two days after payday. Same payment, $0, no credit hit."
 
 ## 4. You approve, you send (15 s)
@@ -65,6 +65,7 @@ Type: **I have $180. Rent 550, card 40, loan 310, electric 60**
 - **STOP**: unsubscribes. **JOIN** brings you back.
 - Gibberish: "Sorry, I didn't catch that," then it repeats the current step.
 - Questions like "what's a forbearance?", "is this safe?", "do you sell my data?": answered, then it steers back.
+- **"Can I afford new shoes for $30?"**: answered from their own numbers, e.g. "I'd wait on shoes… $30 more makes it $53.21 short. After payday on Dec 18 you'd be fine."
 
 ## Closing line
 
