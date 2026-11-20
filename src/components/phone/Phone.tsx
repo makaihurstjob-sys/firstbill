@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronLeft, FileText, Mic, Plus, RotateCcw, Video } from "lucide-react";
+import { ArrowUp, AudioLines, ChevronLeft, FileText, Plus, RotateCcw, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FirstBillApi, Msg } from "@/hooks/useFirstBill";
 import { BankCard, ClockCard, LinkCard, NoticeAttachment, PlaidLogo, TimelineCard } from "./Cards";
@@ -303,7 +303,8 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
   const [draft, setDraft] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
-  const mic = useDictation((t) => setDraft(t));
+  // No custom dictation: like iMessage, the keyboard's own mic does it (and iOS shows no extra start/stop notices).
+  const mic = { on: false, supported: true, toggle: () => input.current?.focus() };
   const [fileOpen, setFileOpen] = useState(false);
 
   useEffect(() => {
@@ -414,10 +415,10 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
               <button
                 type="button"
                 onClick={mic.toggle}
-                className={cn("mb-[3px] grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full", mic.on ? "mic-live bg-[#ff3b30] text-white" : "text-ph-sub")}
-                aria-label={mic.on ? "Stop dictation" : "Dictate a message"}
+                className="mb-[3px] grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full text-ph-sub"
+                aria-label="Open the keyboard"
               >
-                <Mic className="h-[19px] w-[19px]" />
+                <AudioLines className="h-[19px] w-[19px]" />
               </button>
             ) : (
               <button type="submit" disabled className="mb-[3px] grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full bg-ph-out text-ph-out-ink opacity-30" aria-label="Send">
