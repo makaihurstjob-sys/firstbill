@@ -383,10 +383,11 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
       const r = bubble.getBoundingClientRect();
       const m = api.msgs.find((x) => x.id === row.dataset.msg);
       if (!root || !m || m.kind === "divider") return;
+      const k = root.width / (rootRef.current?.offsetWidth || root.width); // the phone can be scaled (desktop frame, promo)
       if (press.current) press.current.fired = true;
       const text = m.kind === "text" || m.kind === "draft" ? m.text : m.kind === "link" ? `${m.title} (${m.url})` : m.kind === "file" ? m.name : m.kind === "notice" ? m.text : bubble.innerText;
       navigator.vibrate?.(10);
-      setHeld({ id: m.id, me: "from" in m && m.from === "me", text, html: bubble.outerHTML.replace(/tail-(me|bot)/g, "").replace(/max-w-\[75%\]/g, ""), top: r.top - root.top, left: r.left - root.left, width: r.width, height: r.height });
+      setHeld({ id: m.id, me: "from" in m && m.from === "me", text, html: bubble.outerHTML.replace(/tail-(me|bot)/g, "").replace(/max-w-\[75%\]/g, ""), top: (r.top - root.top) / k, left: (r.left - root.left) / k, width: r.width / k, height: r.height / k });
     }, 420);
     press.current = { t, x, y, fired: false };
   };
