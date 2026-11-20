@@ -17,7 +17,9 @@ export function SignupSheet({ open, onClose, onDone, autofill }: { open: boolean
   const [consent, setConsent] = useState(false);
   const [auto, setAuto] = useState(false);
   const lastAuto = useRef(0);
-  const aliveRef = useRef(true);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+  const submitted = useRef(false);
 
   useEffect(() => {
     if (!open) {
@@ -28,10 +30,11 @@ export function SignupSheet({ open, onClose, onDone, autofill }: { open: boolean
       setPlaidOpen(false);
       setConsent(false);
       setAuto(false);
+    } else {
+      submitted.current = false;
     }
   }, [open]);
 
-  useEffect(() => () => void (aliveRef.current = false), []);
 
   const addLoans = async () => {
     setLoans("loading");
@@ -46,9 +49,14 @@ export function SignupSheet({ open, onClose, onDone, autofill }: { open: boolean
   };
 
   const ready = name.trim().length > 0 && loans === "done" && bank === "done" && consent;
+  const finish = (info: SignupInfo) => {
+    if (submitted.current) return;
+    submitted.current = true;
+    onDoneRef.current(info);
+  };
   const submit = () => {
     if (!ready) return;
-    onDone({ firstName: name.trim(), paydayDom: Number(payday) });
+    finish({ firstName: name.trim(), paydayDom: Number(payday) });
   };
 
   // Hands-free fill for screen recordings.
@@ -56,32 +64,40 @@ export function SignupSheet({ open, onClose, onDone, autofill }: { open: boolean
     if (!open || !autofill || autofill === lastAuto.current) return;
     lastAuto.current = autofill;
     setAuto(true);
+    let cancelled = false;
+    const step = async (ms: number) => {
+      await sleep(ms);
+      return !cancelled;
+    };
     (async () => {
       const full = "Tariq";
       for (let i = 1; i <= full.length; i++) {
         setName(full.slice(0, i));
-        await sleep(110);
+        if (!(await step(110))) return;
       }
-      await sleep(350);
+      if (!(await step(350))) return;
       setPayday("18");
-      await sleep(350);
+      if (!(await step(350))) return;
       setLoans("loading");
-      await sleep(900);
+      if (!(await step(900))) return;
       setLoans("done");
-      await sleep(400);
+      if (!(await step(400))) return;
       setPlaidOpen(true);
-      await sleep(1300);
+      if (!(await step(1300))) return;
       setPlaidOpen(false);
       setBank("loading");
-      await sleep(800);
+      if (!(await step(800))) return;
       setBank("done");
-      await sleep(400);
+      if (!(await step(400))) return;
       setConsent(true);
-      await sleep(700);
-      if (!aliveRef.current) return;
-      onDone({ firstName: full, paydayDom: 18 });
+      if (!(await step(700))) return;
+      finish({ firstName: full, paydayDom: 18 });
     })();
-  }, [autofill, open, onDone]);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofill, open]);
 
   if (!open) return null;
 

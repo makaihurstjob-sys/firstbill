@@ -76,7 +76,7 @@ export function DemoPanel({ api }: { api: FirstBillApi }) {
             <FileText /> Example 2: forward a notice
           </Button>
         </div>
-        <Button variant="ghost" size="sm" onClick={api.reset} className="justify-self-start">
+        <Button variant="ghost" size="sm" onClick={() => api.reset()} className="justify-self-start">
           <RotateCcw /> Start over
         </Button>
       </div>
@@ -88,7 +88,7 @@ export function DemoPanel({ api }: { api: FirstBillApi }) {
         <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px] tabular-nums">
           <dt className="text-muted">Loans (StudentAid.gov file)</dt>
           <dd>
-            {money(totalBalance(p)).replace(".00", "")} federal at {p.loans[0].rate}%, {money(standardPayment(p))}/mo
+            {money(totalBalance(p)).replace(".00", "")} federal, avg {p.loans[0].rate}%, {money(standardPayment(p))}/mo
           </dd>
           <dt className="text-muted">Grace period ends</dt>
           <dd>{fmtShort(p.graceEnds)}</dd>

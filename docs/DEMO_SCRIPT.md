@@ -16,7 +16,7 @@ What to say over it (about 30 seconds):
 7. Close: "ChatGPT answers questions. FirstBill catches the ones you didn't know to ask."
 
 Optional second clip (15 seconds): click **Example 2: forward a notice**. A grad who's already behind forwards a
-delinquency letter. Claude decodes it, the credit clock shows 26 days until it's reported, the bank check warns
+delinquency letter. Claude decodes it, the credit clock shows 43 days until it's reported, the bank check warns
 that paying it all would overdraft, and YES drafts the forbearance request.
 
 Backup plan: if the live link or Wi-Fi fails, the same app runs locally with `npm install && npm run dev`, and the

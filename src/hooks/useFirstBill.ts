@@ -38,7 +38,7 @@ export type Chip = { label: string; onPick: () => void; primary?: boolean };
 export type Banner = { title: string; body: string } | null;
 export type Source = "claude" | "backup" | null;
 
-type Stage = "start" | "joined" | "signedUp" | "alerted" | "drafted" | "noticeAsk" | "noticeDrafted";
+type Stage = "start" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "noticeAsk" | "noticeDrafted";
 
 let idSeq = 0;
 const nid = () => `m${++idSeq}`;
@@ -54,14 +54,15 @@ export function useFirstBill() {
   const today = useMemo(() => new Date(), []);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [typing, setTyping] = useState(false);
-  const [chips, setChipsState] = useState<Chip[]>([]);
-  const chipsRef = useRef<Chip[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const latest = useRef<Record<string, (...args: any[]) => any>>({});
+  const startChip: Chip = useMemo(() => ({ label: "Text JOIN", primary: true, onPick: () => void latest.current.join() }), []);
+  const [chips, setChipsState] = useState<Chip[]>([startChip]);
+  const chipsRef = useRef<Chip[]>([startChip]);
   const setChips = useCallback((c: Chip[]) => {
     chipsRef.current = c;
     setChipsState(c);
   }, []);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const latest = useRef<Record<string, (...args: any[]) => any>>({});
   const [banner, setBanner] = useState<Banner>(null);
   const [signupOpen, setSignupOpen] = useState(false);
   const [aiMode, setAiMode] = useState<AiMode | "checking">("checking");
@@ -80,6 +81,7 @@ export function useFirstBill() {
   const turns = useRef<ChatTurn[]>([]);
   const skipLive = useRef<(() => void) | null>(null);
   const autoRef = useRef(false);
+  const decodeCtl = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -103,6 +105,7 @@ export function useFirstBill() {
   const botSays = useCallback(
     async (items: MsgBody[], myRun: number) => {
       for (const item of items) {
+        if (run.current !== myRun) return false;
         const len = item.kind === "text" ? item.text.length : 90;
         setTyping(true);
         await sleep(reduceMotion() ? 120 : Math.min(1500, 520 + len * 7));
@@ -128,8 +131,12 @@ export function useFirstBill() {
     [today, balance],
   );
 
-  const reset = useCallback(() => {
+  const reset = useCallback((opts?: { idle?: boolean }) => {
     run.current++;
+    autoRef.current = false;
+    setAutoplaying(false);
+    decodeCtl.current?.abort();
+    decodeCtl.current = null;
     stage.current = "start";
     decode.current = null;
     turns.current = [];
@@ -141,8 +148,8 @@ export function useFirstBill() {
     setBusy(false);
     setLastSource(null);
     setContactName("34778");
-    setChips([]);
-  }, []);
+    setChips(opts?.idle === false ? [] : [startChip]);
+  }, [setChips, startChip]);
 
   /* ---------------- Scene 1: JOIN by text ---------------- */
 
@@ -191,7 +198,9 @@ export function useFirstBill() {
     ];
     if (a.status === "ok") {
       items.push({ kind: "text", from: "bot", text: `You're covered. You'll still have ${money(a.low)} before payday. I'll keep watching and text you if anything changes.` });
-      await botSays(items, myRun);
+      const okCovered = await botSays(items, myRun);
+      if (!okCovered) return;
+      stage.current = "covered";
       setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }]);
       return;
     }
@@ -201,10 +210,10 @@ export function useFirstBill() {
         from: "bot",
         text:
           a.status === "overdraft"
-            ? `That would overdraft you by ${money(-a.low)} on ${fmtShort(a.lowDate)}, and banks usually charge about $35 for that.`
+            ? `That would put you ${money(-a.low)} below zero on ${fmtShort(a.lowDate)}. Depending on your bank, that means an overdraft fee (often $25 to $35) or a bounced payment.`
             : `You wouldn't overdraft, but you'd be down to ${money(a.low)} on ${fmtShort(a.lowDate)} with no cushion.`,
       },
-      { kind: "text", from: "bot", text: `Easiest fix: move your due date to the ${ordinal(a.newDue.getDate())}, ${daysBetween(p.payday, a.newDue)} days after you get paid. Same payment, just later.` },
+      { kind: "text", from: "bot", text: `Easiest fix: ask ${p.servicer.split(" ")[0]} today to move your due date to the ${ordinal(a.newDue.getDate())}, ${daysBetween(p.payday, a.newDue)} days after you get paid. Same payment, just later. Changes can take a billing cycle, so asking now matters.` },
       { kind: "text", from: "bot", text: `What it costs: $0 in fees and no credit hit. Interest adds up about ${money(a.daily)} a day either way, so your total barely changes.` },
       { kind: "text", from: "bot", text: `Reply YES and I'll write the request for you to send ${p.servicer.split(" ")[0]}. I never log in or move money.` },
     );
@@ -219,9 +228,11 @@ export function useFirstBill() {
   }, [botSays, push]);
 
   const completeSignup = useCallback(
-    async (info: SignupInfo) => {
+    async (info: SignupInfo): Promise<boolean> => {
       const myRun = run.current;
+      if (stage.current !== "joined") return false;
       setSignupOpen(false);
+      setChips([]);
       recompute(info);
       const p = profile.current;
       stage.current = "signedUp";
@@ -236,12 +247,13 @@ export function useFirstBill() {
         ],
         myRun,
       );
-      if (!ok) return;
+      if (!ok) return false;
       await sleep(autoRef.current ? 1400 : 900);
-      if (run.current !== myRun) return;
+      if (run.current !== myRun) return false;
       await headsUp();
+      return run.current === myRun;
     },
-    [botSays, headsUp, push, recompute],
+    [botSays, headsUp, push, recompute, setChips],
   );
 
   /* ---------------- YES: draft the message the user sends ---------------- */
@@ -261,7 +273,7 @@ export function useFirstBill() {
         ],
         myRun,
       );
-      if (ok) setChips([{ label: "Start over", onPick: () => latest.current.reset() }]);
+      if (ok) setChips([{ label: "Start over", onPick: () => void latest.current.reset() }]);
       return;
     }
     const p = profile.current;
@@ -295,6 +307,7 @@ export function useFirstBill() {
       let source: Source = "backup";
       if (useLive) {
         const ctl = new AbortController();
+        decodeCtl.current = ctl;
         let skipped = false;
         const slow = setTimeout(() => {
           if (run.current !== myRun) return;
@@ -310,6 +323,8 @@ export function useFirstBill() {
         }, 6000);
         d = await aiDecode(aiMode as AiMode, text, iso(today), ctl.signal);
         clearTimeout(slow);
+        if (decodeCtl.current === ctl) decodeCtl.current = null;
+        if (run.current !== myRun) return;
         setChips([]);
         if (skipped) d = null;
         if (d) source = "claude";
@@ -330,7 +345,7 @@ export function useFirstBill() {
         { kind: "text", from: "bot", text: "Got it. Here's the short version." },
         { kind: "text", from: "bot", text: d.what_it_means },
       ];
-      const federal = d.loan_kind !== "private";
+      const federal = d.loan_kind === "federal";
       const threshold = federal ? 90 : 30;
       if (d.days_late && d.days_late > 0) {
         const since = sample ? daysBetween(sample.noticeDate, today) : 0;
@@ -364,7 +379,7 @@ export function useFirstBill() {
   );
 
   const forwardNotice = useCallback(async () => {
-    reset();
+    reset({ idle: false });
     await sleep(60);
     const myRun = run.current;
     const n = makeSampleNotice(today);
@@ -408,19 +423,19 @@ export function useFirstBill() {
     const s = q.toLowerCase();
     if (/why not|just pay|pay it/.test(s))
       return a.status === "overdraft"
-        ? `You can! But your ${p.upcoming.map((u) => u.label.toLowerCase()).join(" and ")} hit before payday, so you'd go ${money(-a.low)} negative and probably pay a $35 overdraft fee. Moving the date costs nothing.`
+        ? `You can! But your ${p.upcoming.map((u) => u.label.toLowerCase()).join(" and ")} hit before payday, so you'd go ${money(-a.low)} below zero and could get an overdraft fee or a bounced payment. Moving the date costs nothing.`
         : `You can, and you'd be fine. You'd still have ${money(a.low)} before payday.`;
     if (/grace/.test(s)) return "A grace period is the 6 months after you leave school before payments start. Interest on your unsubsidized loans still adds up during it.";
     if (/forbear/.test(s)) return "A forbearance is a pause your servicer approves. It can cover months you already missed, so your account counts as caught up. Interest still adds up, so save it for emergencies.";
     if (/option|else/.test(s))
-      return "Other options: pay one month after payday (you'd still be behind, and the credit clock keeps running), or switch to the RAP plan so future bills fit your income. Only the forbearance stops the clock today.";
+      return "Other options: pay one $310.39 payment after payday. That gets you about a month less behind, but you're still behind. If you lost your job or hours, ask about a deferment. RAP can lower future bills. If you can't pay the full amount, a forbearance is the fastest way to get fully caught up.";
     if (/rap|lower|income|plan/.test(s)) return "On RAP your payment is based on your income, often about $75 to $100 a month at $30k to $40k a year. Applying is free at StudentAid.gov. Never pay a company to do it.";
     if (/scam|safe|trust|data|sell/.test(s)) return "I can't log in or move money, and I never sell your data. Your bank link is read-only, and you send every message yourself.";
     if (/^stop\b/.test(s)) return "You're unsubscribed. Text JOIN anytime to come back.";
     const term = decode.current?.jargon.find((j) => s.includes(j.term.toLowerCase()));
     if (term) return `${term.term}: ${term.meaning}`;
     if (/delinquen/.test(s)) return "Delinquent just means behind on payments. It turns into a credit problem at 90 days late for federal loans.";
-    if (/default/.test(s)) return "Default is 270 days late on a federal loan. After that they can take your tax refund and up to 15% of your paycheck, so we fix things way before that.";
+    if (/default/.test(s)) return "Default is 270 days late on a federal loan. Your whole balance can come due, and the government can take your tax refund and up to 15% of your take-home pay. Those collections are paused right now but can restart, so we fix things way before then.";
     return "Good question. Right now I can explain this bill, your options, or what any word in it means. Try \"why not just pay it?\" or \"what's a grace period?\"";
   }, []);
 
@@ -461,45 +476,44 @@ export function useFirstBill() {
       if (!text || busy) return;
       if (/^join$/i.test(text) && stage.current === "start") return void join();
       if (/^(yes|y|yes please|yep|yeah|ok|okay|do it|bet)[.!]*$/i.test(text) && (stage.current === "alerted" || stage.current === "noticeAsk")) return void yes();
-      if (/^(start over|reset|restart)$/i.test(text)) return reset();
+      if (/^(start over|reset|restart)$/i.test(text)) return void reset();
       if (looksLikeNotice(text)) return void pasteNotice(text);
       return void ask(text);
     },
     [ask, busy, join, pasteNotice, reset, yes],
   );
 
-  /** Show the starting chip whenever the thread is empty. */
-  useEffect(() => {
-    if (msgs.length === 0 && !typing && stage.current === "start") {
-      setChips([{ label: "Text JOIN", primary: true, onPick: () => void latest.current.join() }]);
-    }
-  }, [msgs.length, typing, join]);
-
   /* ---------------- Hands-free demo for screen recording ---------------- */
 
   const [autofill, setAutofill] = useState(0); // bump tells the signup sheet to fill itself in
   const playAll = useCallback(async () => {
-    reset();
+    reset({ idle: false });
+    const myRun = run.current;
     autoRef.current = true;
     setAutoplaying(true);
     await sleep(500);
-    const myRun = run.current;
+    if (run.current !== myRun) return;
     await join();
     if (run.current !== myRun) return;
     await sleep(1100);
+    if (run.current !== myRun) return;
     setSignupOpen(true);
     await sleep(500);
-    setAutofill((n) => n + 1); // the sheet fills itself, then calls completeSignup
+    if (run.current !== myRun) return;
+    setAutofill((n) => n + 1); // the sheet fills itself, then calls onSignupDone
   }, [join, reset]);
 
   const onSignupDone = useCallback(
     async (info: SignupInfo) => {
       const myRun = run.current;
-      await completeSignup(info);
-      if (autoRef.current && run.current === myRun && stage.current === "alerted") {
+      const done = await completeSignup(info);
+      if (!autoRef.current || run.current !== myRun) return;
+      if (done && stage.current === "alerted") {
         await sleep(2200);
-        if (run.current !== myRun) return;
+        if (run.current !== myRun || !autoRef.current) return;
         await yes();
+      }
+      if (run.current === myRun) {
         autoRef.current = false;
         setAutoplaying(false);
       }
@@ -508,14 +522,15 @@ export function useFirstBill() {
   );
 
   const stopAuto = useCallback(() => {
-    autoRef.current = false;
-    setAutoplaying(false);
-  }, []);
+    reset();
+  }, [reset]);
 
   const jumpToHeadsUp = useCallback(async () => {
-    reset();
+    reset({ idle: false });
     await sleep(60);
+    const myRun = run.current;
     recompute({});
+    if (run.current !== myRun) return;
     stage.current = "signedUp";
     await headsUp();
   }, [headsUp, recompute, reset]);
@@ -546,6 +561,7 @@ export function useFirstBill() {
     contactName,
     autoplaying,
     autofill,
+    canOpenSignup: stage.current === "joined",
     profile: profile.current,
     send,
     reset,

@@ -72,7 +72,7 @@ export const NEW_DUE_DOM = 20;
 
 export function makeProfile(today: Date, opts: { firstName?: string; balance?: number; payday?: number } = {}): Profile {
   const graceEnds = addDays(today, 12);
-  const firstPull = nextWeekday(addDays(graceEnds, -1), 5); // the Friday after grace ends
+  const firstPull = nextWeekday(graceEnds, 5); // first Friday after grace ends
   const payDom = opts.payday ?? PAYDAY_DOM;
   let payday = nextDayOfMonth(firstPull, payDom);
   if (daysBetween(firstPull, payday) < 9) payday = nextDayOfMonth(addDays(payday, 1), payDom);
@@ -164,7 +164,7 @@ export function computeAlert(p: Profile, today: Date): Alert {
 }
 
 export function dueDateDraft(p: Profile, a: Alert): string {
-  return `Hi, this is ${p.firstName} [last name], account ending ${p.accountLast4}. My grace period ends ${fmtShort(p.graceEnds)} and my first payment of ${money(a.payment)} is set to pull on ${fmtShort(p.firstPull)}. I get paid on the ${ordinal(p.payday.getDate())}, so I'd like to change my monthly due date to the ${ordinal(NEW_DUE_DOM)}, starting with my first payment. Please confirm the new due date in writing and that my autopay will follow it. Thank you.`;
+  return `Hi, this is ${p.firstName} [last name], account ending ${p.accountLast4}. My grace period ends ${fmtShort(p.graceEnds)} and my first payment of ${money(a.payment)} is set to pull on ${fmtShort(p.firstPull)}. I get paid on the ${ordinal(p.payday.getDate())}, so I'd like to change my monthly due date to the ${ordinal(NEW_DUE_DOM)}. Please tell me if this can apply to my first payment, and confirm the new due date and my autopay date in writing. Thank you.`;
 }
 
 /* ---------- Forwarded notice (second feature) ---------- */
@@ -191,7 +191,7 @@ Notice date: ${fmtShort(noticeDate)}, ${noticeDate.getFullYear()}
 Account ending 9083 · Direct Subsidized / Unsubsidized
 
 Dear Borrower,
-Our records indicate your account is 62 days delinquent. The total past due amount of $620.78 must be remitted to bring your account current. Your next scheduled installment of $310.39 is due ${fmtShort(dueDate)}, ${dueDate.getFullYear()}.
+Our records indicate your account is 45 days delinquent. The total past due amount of $620.78 must be remitted to bring your account current. Your next scheduled installment of $310.39 is due ${fmtShort(dueDate)}, ${dueDate.getFullYear()}.
 
 Delinquency of 90 days or more will be reported to the national consumer reporting agencies and may adversely affect your credit rating. Continued delinquency may result in default, at which point collection activity, including administrative wage garnishment and Treasury offset, may begin.
 
@@ -207,20 +207,20 @@ export function sampleDecode(n: SampleNotice): Decode {
     is_notice: true,
     servicer: "Meridian",
     loan_kind: "federal",
-    what_it_means: "You've missed 2 payments on your federal student loans. You're 62 days behind, and it takes $620.78 to catch up.",
+    what_it_means: "You've missed 2 payments on your federal student loans. You're 45 days behind, and it takes $620.78 to catch up.",
     amount_to_catch_up: 620.78,
     monthly_payment: 310.39,
     due_date: iso(n.dueDate),
-    days_late: 62,
+    days_late: 45,
     next_action_short: "Ask for a 2-month forbearance",
     next_action: "Ask Meridian for a forbearance that covers the 2 missed months. That makes your account current and stops the credit clock.",
     cost_of_action: "About $262 in interest builds up over those 2 months ($131 a month). You still owe it later, but there's no fee and no credit hit.",
     draft_message:
-      "Hi, this is [Your name], account ending 9083. My federal Direct Loans are 62 days past due ($620.78), and I can't pay the full amount right now. Please apply a forbearance to cover the past-due months and bring my account current, so the delinquency is not reported to the credit bureaus. Please confirm in writing when it's applied and tell me my next payment amount and due date. I'd also like to know if I qualify for the Repayment Assistance Plan (RAP). Thank you.",
+      "Hi, this is [Your name], account ending 9083. My federal Direct Loans are 45 days past due ($620.78), and I can't pay the full amount right now. Please apply a forbearance to cover the past-due months and bring my account current, so the delinquency is not reported to the credit bureaus. Please confirm in writing when it's applied and tell me my next payment amount and due date. I'd also like to know if I qualify for the Repayment Assistance Plan (RAP). Thank you.",
     jargon: [
       { term: "Delinquent", meaning: "Behind on payments." },
       { term: "Forbearance", meaning: "A pause your servicer approves. It can cover months you missed." },
-      { term: "Default", meaning: "270 days late. Then they can take tax refunds and up to 15% of pay." },
+      { term: "Default", meaning: "270 days late. Then they can take tax refunds and part of your pay." },
     ],
   };
 }
@@ -240,11 +240,11 @@ export function heuristicDecode(text: string, today: Date): Decode {
   const pastDue = amt(/(?:past due|amount due|total (?:amount )?due|balance due)[^$]{0,40}\$\s?([\d,]+(?:\.\d{2})?)/i) ?? amt(/\$\s?([\d,]+\.\d{2})/);
   const lateM = t.match(/(\d{1,3})\s*days?\s*(?:past due|delinquent|late|overdue)/i);
   const days_late = lateM ? Number(lateM[1]) : null;
-  const threshold = loan_kind === "private" ? 30 : 90;
+  const threshold = loan_kind === "federal" ? 90 : 30;
   const late = days_late && days_late > 0;
   const next_action = late
-    ? loan_kind === "private"
-      ? `Call ${servicer} and ask for a hardship plan or a short payment pause before you hit ${threshold} days late.`
+    ? loan_kind !== "federal"
+      ? `Call ${servicer} today and ask for a hardship plan or a short payment pause. If you're past ${threshold} days, acting now keeps it from getting worse.`
       : `Ask ${servicer} for a forbearance that covers the missed months. That makes your account current and stops the credit clock.`
     : `Pay ${pastDue ? money(pastDue) : "the amount due"} before the due date, or ask ${servicer} to move your due date to right after payday.`;
   return {
@@ -252,7 +252,7 @@ export function heuristicDecode(text: string, today: Date): Decode {
     servicer,
     loan_kind,
     what_it_means: late
-      ? `You're ${days_late} days behind${pastDue ? ` and it takes ${money(pastDue)} to catch up` : ""}. It gets reported to credit bureaus at ${threshold} days late.`
+      ? `You're ${days_late} days behind${pastDue ? ` and it takes ${money(pastDue)} to catch up` : ""}. ${loan_kind === "federal" ? "Federal loans get reported to credit bureaus at 90 days late." : "Most lenders can report a late payment at 30 days."}`
       : `This is a bill${pastDue ? ` for ${money(pastDue)}` : ""}. Nothing is late yet.`,
     amount_to_catch_up: pastDue,
     monthly_payment: null,

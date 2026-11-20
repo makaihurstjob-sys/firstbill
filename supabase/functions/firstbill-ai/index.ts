@@ -53,6 +53,8 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
 
+    if (body.mode === "ping") return json({ ok: true, hasKey: Boolean(Deno.env.get("ANTHROPIC_API_KEY")) });
+
     if (body.mode === "decode") {
       const notice = String(body.notice ?? "").slice(0, 12000);
       const today = /^\d{4}-\d{2}-\d{2}$/.test(String(body.today)) ? String(body.today) : new Date().toISOString().slice(0, 10);

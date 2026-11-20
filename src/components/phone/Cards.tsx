@@ -94,7 +94,7 @@ export function ClockCard({ daysLeft, lateToday, threshold, hitDate, federal }: 
         <p className="mt-2 text-[14px] leading-snug">
           {past
             ? "This can already show up on your credit report. Acting now still stops it from getting worse."
-            : `${federal ? "Federal loans" : "Private lenders"} report to credit bureaus at ${threshold} days late. For you that's ${fmtShort(fromISO(hitDate))} if nothing changes.`}
+            : `${federal ? "Federal loans are reported to credit bureaus" : "Most lenders can report it"} at ${threshold} days late. For you that's ${fmtShort(fromISO(hitDate))} if nothing changes.`}
         </p>
       </div>
     </BotCard>

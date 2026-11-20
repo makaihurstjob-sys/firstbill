@@ -34,7 +34,14 @@ function getSample(): Promise<SampleFn | null> {
 
 export async function detectAiMode(): Promise<AiMode> {
   if (await getSample()) return "artifact";
-  if (SUPABASE_URL && SUPABASE_KEY) return "supabase";
+  if (SUPABASE_URL && SUPABASE_KEY) {
+    try {
+      await callEdge({ mode: "ping" }, AbortSignal.timeout(5000));
+      return "supabase";
+    } catch {
+      return "none";
+    }
+  }
   return "none";
 }
 
@@ -76,7 +83,7 @@ export async function aiReply(mode: AiMode, context: string, turns: ChatTurn[], 
       return r.text?.trim() || null;
     }
     if (mode === "supabase") {
-      const r = await callEdge<{ text?: string }>({ mode: "reply", context, turns }, signal);
+      const r = await callEdge<{ text?: string }>({ mode: "reply", context, turns }, signal ?? AbortSignal.timeout(20000));
       return r.text?.trim() || null;
     }
   } catch {

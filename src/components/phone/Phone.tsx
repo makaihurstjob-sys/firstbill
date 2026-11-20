@@ -106,7 +106,7 @@ function Row({ m, next, api }: { m: Msg; next?: Msg; api: FirstBillApi }) {
       body = <NoticeAttachment title={m.title} servicer={m.servicer} text={m.text} />;
       break;
     case "link":
-      body = <LinkCard title={m.title} url={m.url} onOpen={() => api.setSignupOpen(true)} />;
+      body = <LinkCard title={m.title} url={m.url} onOpen={() => api.canOpenSignup && api.setSignupOpen(true)} />;
       break;
     case "timeline":
       body = <TimelineCard alert={m.alert} profile={m.profile} />;

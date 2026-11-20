@@ -1,0 +1,3 @@
+# The demo calls this function with the project's publishable key, which is not a user JWT.
+[functions.firstbill-ai]
+verify_jwt = false
