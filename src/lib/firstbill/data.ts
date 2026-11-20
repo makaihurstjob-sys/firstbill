@@ -275,3 +275,30 @@ export function looksLikeNotice(text: string): boolean {
   const t = text.trim();
   return t.length > 160 || (/\$\s?\d/.test(t) && /(due|past due|delinquen|balance|payment)/i.test(t) && t.length > 60);
 }
+
+/* ---------------- Payday boost: what a little extra each month saves ---------------- */
+
+export const BOOST = 25;
+
+/** Interest saved and months cut by paying `extra` more each month on the standard plan. */
+export function boostMath(p: Profile, payment: number, extra: number): { saved: number; sooner: number } {
+  const r = p.loans[0].rate / 100 / 12;
+  const run = (pay: number) => {
+    let bal = totalBalance(p), months = 0, interest = 0;
+    while (bal > 0.005 && months < 600) {
+      const i = bal * r;
+      interest += i;
+      bal = bal + i - pay;
+      months++;
+    }
+    return { months, interest };
+  };
+  const base = run(payment), more = run(payment + extra);
+  return { saved: Math.round(base.interest - more.interest), sooner: base.months - more.months };
+}
+
+/** Money left after payday once the moved loan payment and this month's bills are paid. */
+export function afterPayday(p: Profile, payment: number): number {
+  const bills = p.upcoming.filter((u) => u.date < p.payday).reduce((s, u) => s + u.amount, 0);
+  return Math.round((p.balance - bills + p.paycheck - payment) * 100) / 100;
+}

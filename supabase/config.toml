@@ -1,3 +1,7 @@
 # The demo calls this function with the project's publishable key, which is not a user JWT.
 [functions.firstbill-ai]
 verify_jwt = false
+
+# Plaid Sandbox sample data for the demo; also called with the publishable key.
+[functions.plaid-sandbox]
+verify_jwt = false

@@ -16,7 +16,7 @@ The page shows an iPhone Messages thread plus a presenter panel. Three flows:
 
 Free-text questions ("why not just pay it?", "what's a grace period?") go to Claude, with built-in answers as a backup.
 
-**Play full demo, hands-free** runs flows 1 and 2 by itself in about 40 seconds, for screen recordings. The script is in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
+**Play full demo, hands-free** runs flows 1 and 2 plus the payday nudge by itself in about 50 seconds, for screen recordings. The script is in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
 
 ## How it's built
 
@@ -55,6 +55,16 @@ With no keys it runs on the built-in answers, so the demo can't break.
 3. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` (Lovable Cloud does this for you).
 
 The function enables Claude's server-side refusal fallback, so a declined request is rerouted instead of failing the demo.
+
+### Plaid Sandbox data
+
+The bank and loan numbers come from Plaid's public **Sandbox**: sample data only, never a real account. `plaid/firstbill-sandbox-user.json` is a Plaid custom Sandbox user for the story (First Platypus Bank `ins_109508`, checking ••6602 at $450.18, recent bills, a $1,240 paycheck on the 18th, and the two Direct loans as Liabilities). The `plaid-sandbox` edge function logs it in with `user_custom`, reads `/accounts/balance/get` and `/liabilities/get`, and returns the mapped numbers. Its host is hardcoded to `https://sandbox.plaid.com`.
+
+1. In the Plaid Dashboard (Developers → Keys), copy **your own Sandbox** `client_id` and secret.
+2. Set them as Supabase secrets, never in a file: `supabase secrets set PLAID_CLIENT_ID=... PLAID_SECRET=...`
+3. Deploy: `supabase functions deploy plaid-sandbox`
+
+The presenter panel then shows "Bank data from: Plaid Sandbox (live)". With no keys it says "Built-in copy of the Plaid Sandbox user" and uses the same numbers from `src/lib/firstbill/data.ts`. Plaid's test login `user_good` / `pass_good` and the custom user are public sample data.
 
 ### GitHub Pages (optional)
 

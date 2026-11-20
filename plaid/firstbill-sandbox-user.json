@@ -1,0 +1,85 @@
+{
+  "seed": "firstbill-tariq-2026-11-20",
+  "roll_dates_forward": false,
+  "override_accounts": [
+    {
+      "type": "depository",
+      "subtype": "checking",
+      "starting_balance": 450.18,
+      "force_available_balance": 450.18,
+      "currency": "USD",
+      "meta": {
+        "name": "Everyday Checking",
+        "official_name": "First Platypus Everyday Checking",
+        "mask": "6602"
+      },
+      "transactions": [
+        { "date_transacted": "2026-10-07", "date_posted": "2026-10-07", "amount": 65, "description": "Mobile phone bill autopay", "currency": "USD" },
+        { "date_transacted": "2026-10-11", "date_posted": "2026-10-11", "amount": 98, "description": "Car insurance premium", "currency": "USD" },
+        { "date_transacted": "2026-10-24", "date_posted": "2026-10-25", "amount": 54.12, "description": "Grocery store", "currency": "USD" },
+        { "date_transacted": "2026-11-02", "date_posted": "2026-11-02", "amount": 640, "description": "Rent share payment", "currency": "USD" },
+        { "date_transacted": "2026-11-07", "date_posted": "2026-11-07", "amount": 65, "description": "Mobile phone bill autopay", "currency": "USD" },
+        { "date_transacted": "2026-11-09", "date_posted": "2026-11-10", "amount": 38.4, "description": "Gas station", "currency": "USD" },
+        { "date_transacted": "2026-11-11", "date_posted": "2026-11-11", "amount": 98, "description": "Car insurance premium", "currency": "USD" },
+        { "date_transacted": "2026-11-14", "date_posted": "2026-11-15", "amount": 61.37, "description": "Grocery store", "currency": "USD" },
+        { "date_transacted": "2026-11-19", "date_posted": "2026-11-20", "amount": 6.25, "description": "Coffee shop", "currency": "USD" }
+      ],
+      "inflow_model": {
+        "type": "monthly-income",
+        "income_amount": 1240,
+        "payment_day_of_month": 18,
+        "transaction_name": "Payroll direct deposit"
+      }
+    },
+    {
+      "type": "loan",
+      "subtype": "student",
+      "starting_balance": 9500,
+      "meta": {
+        "name": "Direct Subsidized Loan",
+        "official_name": "Meridian Loan Servicing - Direct Subsidized"
+      },
+      "liability": {
+        "type": "student",
+        "origination_date": "2022-08-04",
+        "principal": 9500,
+        "nominal_apr": 5.5,
+        "loan_name": "Direct Subsidized Loan",
+        "guarantor": "DEPT OF ED",
+        "is_federal": true,
+        "sequence_number": 1,
+        "minimum_payment_amount": 103.1,
+        "expected_payoff_date": "2036-11-04",
+        "loan_status": { "type": "in grace", "end_date": "2026-12-02" },
+        "repayment_plan_type": "standard",
+        "repayment_plan_description": "Standard Repayment, 10 years",
+        "repayment_model": { "type": "standard", "non_repayment_months": 52, "repayment_months": 120 }
+      }
+    },
+    {
+      "type": "loan",
+      "subtype": "student",
+      "starting_balance": 19100,
+      "meta": {
+        "name": "Direct Unsubsidized Loan",
+        "official_name": "Meridian Loan Servicing - Direct Unsubsidized"
+      },
+      "liability": {
+        "type": "student",
+        "origination_date": "2022-08-04",
+        "principal": 19100,
+        "nominal_apr": 5.5,
+        "loan_name": "Direct Unsubsidized Loan",
+        "guarantor": "DEPT OF ED",
+        "is_federal": true,
+        "sequence_number": 2,
+        "minimum_payment_amount": 207.29,
+        "expected_payoff_date": "2036-11-04",
+        "loan_status": { "type": "in grace", "end_date": "2026-12-02" },
+        "repayment_plan_type": "standard",
+        "repayment_plan_description": "Standard Repayment, 10 years",
+        "repayment_model": { "type": "standard", "non_repayment_months": 52, "repayment_months": 120 }
+      }
+    }
+  ]
+}

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BellRing, FileText, Play, RotateCcw, Sparkles, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { FirstBillApi } from "@/hooks/useFirstBill";
 import { cn } from "@/lib/utils";
 import { fmtShort, money, standardPayment, totalBalance } from "@/lib/firstbill/data";
+import { fetchPlaidSandbox } from "@/lib/firstbill/plaid";
 
 function AiStatus({ api }: { api: FirstBillApi }) {
   const label =
@@ -44,7 +45,18 @@ function AiStatus({ api }: { api: FirstBillApi }) {
 
 export function DemoPanel({ api }: { api: FirstBillApi }) {
   const [paste, setPaste] = useState("");
+  const [plaidLive, setPlaidLive] = useState(false);
   const p = api.profile;
+
+  useEffect(() => {
+    let alive = true;
+    void fetchPlaidSandbox().then((d) => {
+      if (alive) setPlaidLive(Boolean(d));
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <aside className="flex min-w-0 flex-col gap-4">
@@ -65,7 +77,7 @@ export function DemoPanel({ api }: { api: FirstBillApi }) {
           </Button>
         ) : (
           <Button onClick={() => void api.playAll()} size="lg">
-            <Play /> Play full demo, hands-free (about 40 s)
+            <Play /> Play full demo, hands-free (about 50 s)
           </Button>
         )}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -85,6 +97,9 @@ export function DemoPanel({ api }: { api: FirstBillApi }) {
 
       <div className="rounded-2xl border border-line bg-panel p-4">
         <div className="text-[13px] font-semibold">Sandbox data FirstBill watches</div>
+        <p className="mt-1 text-[12px] text-muted">
+          Bank data from: <b className="text-ink">{plaidLive ? "Plaid Sandbox (live)" : "Built-in copy of the Plaid Sandbox user"}</b>
+        </p>
         <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px] tabular-nums">
           <dt className="text-muted">Loans (StudentAid.gov file)</dt>
           <dd>

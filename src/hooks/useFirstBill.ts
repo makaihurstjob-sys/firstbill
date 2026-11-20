@@ -18,6 +18,9 @@ import {
   ordinal,
   sampleDecode,
   totalBalance,
+  boostMath,
+  afterPayday,
+  BOOST,
   type Alert,
   type Profile,
   type SampleNotice,
@@ -38,7 +41,7 @@ export type Chip = { label: string; onPick: () => void; primary?: boolean };
 export type Banner = { title: string; body: string } | null;
 export type Source = "claude" | "backup" | null;
 
-type Stage = "start" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "noticeAsk" | "noticeDrafted";
+type Stage = "start" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
 
 let idSeq = 0;
 const nid = () => `m${++idSeq}`;
@@ -160,9 +163,9 @@ export function useFirstBill() {
     stage.current = "joined";
     const ok = await botSays(
       [
-        { kind: "text", from: "bot", text: "Welcome to FirstBill. I watch your student loans and your bank, and I text you before a bill goes wrong. It's free, and there's no app to download." },
+        { kind: "text", from: "bot", text: "Welcome to FirstBill. I text you before a bill goes wrong. Free, no app." },
         { kind: "link", from: "bot", title: "Finish setup in 60 seconds", url: "firstbill.app/join/k7q2" },
-        { kind: "text", from: "bot", text: "Reply STOP anytime. I never sell your data or move your money." },
+        { kind: "text", from: "bot", text: "I never move your money. Reply STOP anytime." },
       ],
       myRun,
     );
@@ -179,10 +182,10 @@ export function useFirstBill() {
     const a = alert.current;
     setChips([]);
     setContactName("FirstBill");
-    push({ kind: "divider", text: `Today ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, sub: stage.current === "signedUp" ? "6 months later" : undefined });
+    push({ kind: "divider", text: `Today ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, sub: stage.current === "signedUp" ? "Right after signup" : undefined });
     stage.current = "alerted";
     const opener = `Heads up, ${p.firstName}: your student loan grace period ends in ${a.graceDays} days.`;
-    setBanner({ title: "FirstBill", body: `${opener} Your first payment could overdraft your checking.` });
+    setBanner({ title: "FirstBill", body: `${opener} Your first payment could overdraft you.` });
     await sleep(reduceMotion() ? 300 : 2300);
     if (run.current !== myRun) return;
     setBanner(null);
@@ -192,12 +195,12 @@ export function useFirstBill() {
       {
         kind: "text",
         from: "bot",
-        text: `Your first payment of ${money(a.payment)} pulls from checking on ${firstPullStr}. That leaves you ${money(a.afterPull)} until payday on the ${ordinal(p.payday.getDate())}.`,
+        text: `${money(a.payment)} comes out ${firstPullStr}. That leaves ${money(a.afterPull)} until payday.`,
       },
       { kind: "timeline", from: "bot", alert: a, profile: p },
     ];
     if (a.status === "ok") {
-      items.push({ kind: "text", from: "bot", text: `You're covered. You'll still have ${money(a.low)} before payday. I'll keep watching and text you if anything changes.` });
+      items.push({ kind: "text", from: "bot", text: `You're covered. Lowest point: ${money(a.low)}. I'll keep watching.` });
       const okCovered = await botSays(items, myRun);
       if (!okCovered) return;
       stage.current = "covered";
@@ -210,12 +213,12 @@ export function useFirstBill() {
         from: "bot",
         text:
           a.status === "overdraft"
-            ? `That would put you ${money(-a.low)} below zero on ${fmtShort(a.lowDate)}. Depending on your bank, that means an overdraft fee (often $25 to $35) or a bounced payment.`
-            : `You wouldn't overdraft, but you'd be down to ${money(a.low)} on ${fmtShort(a.lowDate)} with no cushion.`,
+            ? `With your other bills, you'd be ${money(-a.low)} short on ${fmtShort(a.lowDate)}. That's an overdraft fee, often $25 to $35.`
+            : `You'd be down to ${money(a.low)} on ${fmtShort(a.lowDate)}. No cushion.`,
       },
-      { kind: "text", from: "bot", text: `Easiest fix: ask ${p.servicer.split(" ")[0]} today to move your due date to the ${ordinal(a.newDue.getDate())}, ${daysBetween(p.payday, a.newDue)} days after you get paid. Same payment, just later. Changes can take a billing cycle, so asking now matters.` },
-      { kind: "text", from: "bot", text: `What it costs: $0 in fees and no credit hit. Interest adds up about ${money(a.daily)} a day either way, so your total barely changes.` },
-      { kind: "text", from: "bot", text: `Reply YES and I'll write the request for you to send ${p.servicer.split(" ")[0]}. I never log in or move money.` },
+      { kind: "text", from: "bot", text: `Fix: move your due date to the ${ordinal(a.newDue.getDate())}, ${daysBetween(p.payday, a.newDue)} days after payday. Same payment. Ask now, it can take a cycle.` },
+      { kind: "text", from: "bot", text: `Costs $0. No credit hit.` },
+      { kind: "text", from: "bot", text: `Reply YES and I'll write the request. You send it.` },
     );
     const ok = await botSays(items, myRun);
     if (!ok) return;
@@ -242,7 +245,7 @@ export function useFirstBill() {
           {
             kind: "text",
             from: "bot",
-            text: `You're in, ${p.firstName}. I found ${p.loans.length} federal loans (${money(totalBalance(p)).replace(".00", "")} with ${p.servicer.split(" ")[0]}) and checking ending ${p.checkingLast4}. I'll only text when something needs you.`,
+            text: `You're in, ${p.firstName}. I see ${p.loans.length} federal loans (${money(totalBalance(p)).replace(".00", "")}) and checking ••${p.checkingLast4}. Checking your next few weeks now.`,
           },
         ],
         myRun,
@@ -281,19 +284,72 @@ export function useFirstBill() {
     stage.current = "drafted";
     const ok = await botSays(
       [
-        { kind: "text", from: "bot", text: `Here's your request. Paste it into ${p.servicer.split(" ")[0]}'s secure messages, or read it on a call at 1-888-555-0142.` },
+        { kind: "text", from: "bot", text: `Here it is. Paste it in ${p.servicer.split(" ")[0]}'s messages or read it on a call.` },
         { kind: "draft", from: "bot", to: p.servicer, text: dueDateDraft(p, a) },
-        {
-          kind: "text",
-          from: "bot",
-          text: `I'll text you on ${fmtShort(addDays(p.firstPull, -3))} to make sure they confirmed the ${ordinal(a.newDue.getDate())}. If not, I'll warn you before anything pulls on ${fmtShort(p.firstPull)}.`,
-        },
+        { kind: "text", from: "bot", text: `I'll check on ${fmtShort(addDays(p.firstPull, -3))} that they said yes.` },
       ],
       myRun,
     );
-    if (ok) setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }]);
+    if (!ok) return;
+    await sleep(reduceMotion() ? 300 : 1800);
+    if (run.current !== myRun) return;
+    await latest.current.paydayBoost();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botSays, push, reset]);
+
+  /* ---------------- Payday: a proactive "pay it off sooner" nudge ---------------- */
+
+  const paydayBoost = useCallback(async () => {
+    const myRun = run.current;
+    const p = profile.current;
+    const a = alert.current;
+    setChips([]);
+    stage.current = "boost";
+    push({ kind: "divider", text: `${fmtShort(p.payday)} · Payday`, sub: "FirstBill texts first" });
+    const b = boostMath(p, a.payment, BOOST);
+    const left = afterPayday(p, a.payment);
+    const opener = `Payday! Want to pay your loan off sooner?`;
+    setBanner({ title: "FirstBill", body: opener });
+    await sleep(reduceMotion() ? 300 : 1800);
+    if (run.current !== myRun) return;
+    setBanner(null);
+    const ok = await botSays(
+      [
+        { kind: "text", from: "bot", text: `Payday! +${money(p.paycheck).replace(".00", "")} landed. After this month's bills you still have ${money(left)}.` },
+        { kind: "text", from: "bot", text: `Put ${money(BOOST).replace(".00", "")} extra on your loan each month? You'd save about ${money(b.saved).replace(/\.\d\d$/, "")} in interest and be done ${b.sooner} months sooner.` },
+      ],
+      myRun,
+    );
+    if (!ok) return;
+    setChips([
+      { label: `YES, ${money(BOOST).replace(".00", "")} a month`, primary: true, onPick: () => void latest.current.boostYes() },
+      { label: "Not now", onPick: () => void latest.current.boostNo() },
+    ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [botSays, push]);
+
+  const boostYes = useCallback(async () => {
+    const myRun = run.current;
+    if (stage.current !== "boost") return;
+    stage.current = "boosted";
+    setChips([]);
+    push({ kind: "text", from: "me", text: "YES" });
+    const ok = await botSays(
+      [{ kind: "text", from: "bot", text: `Done. Every payday I'll remind you, only if your bank can spare it. Tip: tell ${profile.current.servicer.split(" ")[0]} the extra goes to principal.` }],
+      myRun,
+    );
+    if (ok) setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }]);
+  }, [botSays, push]);
+
+  const boostNo = useCallback(async () => {
+    const myRun = run.current;
+    if (stage.current !== "boost") return;
+    stage.current = "boosted";
+    setChips([]);
+    push({ kind: "text", from: "me", text: "Not now" });
+    const ok = await botSays([{ kind: "text", from: "bot", text: "No problem. I'll ask again next payday." }], myRun);
+    if (ok) setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }]);
+  }, [botSays, push]);
 
   /* ---------------- Scene 3: a forwarded notice, decoded by Claude ---------------- */
 
@@ -467,7 +523,7 @@ export function useFirstBill() {
     [aiMode, cannedAnswer, contextText, push, setChips, useLive],
   );
 
-  latest.current = { yes, ask, forwardNotice, join, reset };
+  latest.current = { yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo };
 
   /** Anything typed into the composer. */
   const send = useCallback(
@@ -512,6 +568,12 @@ export function useFirstBill() {
         await sleep(2200);
         if (run.current !== myRun || !autoRef.current) return;
         await yes();
+        if (run.current !== myRun || !autoRef.current) return;
+        if ((stage.current as Stage) === "boost") {
+          await sleep(2000);
+          if (run.current !== myRun || !autoRef.current) return;
+          await latest.current.boostYes();
+        }
       }
       if (run.current === myRun) {
         autoRef.current = false;
