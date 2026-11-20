@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChevronLeft, FileText, Mic, Plus, RotateCcw, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FirstBillApi, Msg } from "@/hooks/useFirstBill";
-import { BankCard, ClockCard, DraftCard, LinkCard, NoticeAttachment, TimelineCard } from "./Cards";
+import { BankCard, ClockCard, LinkCard, NoticeAttachment, PlaidLogo, TimelineCard } from "./Cards";
+import type { Profile } from "@/lib/firstbill/data";
 
 function useClock() {
   const [now, setNow] = useState(() => new Date());
@@ -92,7 +93,7 @@ function Bubble({ from, text, tail }: { from: "me" | "bot"; text: string; tail: 
   );
 }
 
-function Row({ m, next, api }: { m: Msg; next?: Msg; api: FirstBillApi }) {
+function Row({ m, next, api, onFile }: { m: Msg; next?: Msg; api: FirstBillApi; onFile: () => void }) {
   if (m.kind === "divider") {
     return (
       <div className="pb-1 pt-3 text-center text-[12px] leading-4 text-ph-sub">
@@ -133,23 +134,88 @@ function Row({ m, next, api }: { m: Msg; next?: Msg; api: FirstBillApi }) {
       body = <BankCard {...m} />;
       break;
     case "draft":
-      body = <DraftCard to={m.to} text={m.text} />;
+      body = <DraftBubble text={m.text} tail={tail} />;
       break;
     case "file":
       body = (
-        <div className="flex w-[70%] max-w-[250px] items-center gap-3 rounded-[18px] bg-ph-out px-3 py-2.5 text-ph-out-ink">
+        <button
+          type="button"
+          onClick={onFile}
+          aria-label={`Open ${m.name}`}
+          className={cn("bubble flex w-[70%] max-w-[250px] items-center gap-3 rounded-[18px] bg-ph-out px-3 py-2.5 text-left text-ph-out-ink active:opacity-80", tail && "tail-me")}
+        >
           <span className="grid h-10 w-9 shrink-0 place-items-center rounded-md bg-white/20">
             <FileText className="h-5 w-5" />
           </span>
           <span className="min-w-0">
             <b className="block truncate text-[14px]">{m.name}</b>
-            <span className="text-[12px] opacity-80">{m.size} · StudentAid.gov</span>
+            <span className="text-[12px] opacity-80">{m.size} · Tap to view</span>
           </span>
-        </div>
+        </button>
       );
       break;
   }
   return <div className={cn("flex animate-bubble-in px-3", from === "me" ? "justify-end" : "justify-start", sameNext ? "pb-[2px]" : "pb-2")}>{body}</div>;
+}
+
+/** The drafted message is just a text, like iMessage. Tap it to copy. */
+function DraftBubble({ text, tail }: { text: string; tail: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked: the text is still selectable */
+    }
+  };
+  return (
+    <div className="flex max-w-[75%] flex-col items-start">
+      <button type="button" onClick={copy} data-draft className={cn("bubble whitespace-pre-wrap break-words rounded-[18px] bg-ph-in px-3 py-[6px] text-left text-[17px] leading-[22px] tracking-[-0.41px] text-ph-in-ink", tail && "tail-bot")}>
+        <p>{text}</p>
+      </button>
+      <span className="mt-1 pl-2 text-[11px] text-ph-sub">{copied ? "Copied" : "Tap to copy"}</span>
+    </div>
+  );
+}
+
+function AidFileSheet({ profile, onClose }: { profile: Profile; onClose: () => void }) {
+  const d = (x: Date) => `${String(x.getMonth() + 1).padStart(2, "0")}/${String(x.getDate()).padStart(2, "0")}/${x.getFullYear()}`;
+  const begin = new Date(profile.graceEnds);
+  begin.setDate(begin.getDate() + 1);
+  const name = (profile.firstName || "Student").toUpperCase();
+  const lines = [
+    "File Source: U.S. Department of Education, Federal Student Aid",
+    `File Request Date: ${d(new Date())}`,
+    `Student First Name: ${name}`,
+    "",
+    ...profile.loans.flatMap((l, i) => [
+      `Loan ${i + 1}`,
+      `Loan Type Description: ${l.name.toUpperCase().replace("DIRECT ", "DIRECT STAFFORD ")}`,
+      `Loan Outstanding Principal Balance: $${l.balance.toLocaleString("en-US")}`,
+      `Loan Interest Rate: ${l.rate.toFixed(2)}%`,
+      `Loan Repayment Begin Date: ${d(begin)}`,
+      `Loan Contact Name: ${profile.servicer.toUpperCase()}`,
+      "",
+    ]),
+  ];
+  return (
+    <div className="absolute inset-0 z-40 flex flex-col bg-ph-bg" role="dialog" aria-label="MyStudentData.txt">
+      <div className="flex items-center justify-between border-b border-ph-sep bg-ph-bar px-3 pb-2 pt-[max(12px,env(safe-area-inset-top))]">
+        <span className="w-14" />
+        <span className="text-center">
+          <b className="block text-[16px]">MyStudentData.txt</b>
+          <span className="text-[12px] text-ph-sub">6 KB · sample data</span>
+        </span>
+        <button type="button" onClick={onClose} className="w-14 text-right text-[17px] font-semibold text-ph-out">
+          Done
+        </button>
+      </div>
+      <pre className="flex-1 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[12.5px] leading-[1.5] text-ph-ink">{lines.join("\n")}</pre>
+      <p className="px-4 pb-[max(12px,env(safe-area-inset-bottom))] text-[12px] text-ph-sub">What you sent FirstBill: the file StudentAid.gov gives you from Download My Aid Data. Sample record for the demo.</p>
+    </div>
+  );
 }
 
 function Typing() {
@@ -178,11 +244,15 @@ function PlaidSheet({ onClose, onDone }: { onClose: () => void; onDone: () => vo
           <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center" aria-label="Back">
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <span className="text-[13px] font-bold tracking-wide">PLAID · SANDBOX</span>
-          <span className="w-9" />
+          <PlaidLogo className="h-6 text-black" />
+          <span className="w-9 text-right text-[11px] font-semibold text-[#888]">TEST</span>
         </div>
-        <p className="mt-3 text-[16px] font-semibold leading-snug">FirstBill wants read-only access to your balance and upcoming bills.</p>
-        <p className="mt-1 text-[13px] text-[#666]">It can never move money. Test bank, sample data.</p>
+        <p className="mt-4 text-[20px] font-bold leading-snug">FirstBill uses Plaid to connect your bank</p>
+        <ul className="mt-3 space-y-2 text-[14px] leading-snug text-[#333]">
+          <li><b>Read-only.</b> Plaid and FirstBill can see your balance and bills. Neither can move your money.</li>
+          <li><b>Private.</b> Your login goes to your bank, not to FirstBill. Your data is never sold.</li>
+        </ul>
+        <p className="mt-3 text-[12px] text-[#888]">Plaid Sandbox: a test bank with sample data.</p>
         <button type="button" onClick={go} className="mt-4 flex w-full items-center gap-3 rounded-xl border border-[#ddd] px-3 py-3 text-left">
           <span className="grid h-10 w-10 place-items-center rounded-full bg-[#e8f0fe] text-[13px] font-bold text-[#1a56db]">FP</span>
           <span className="flex-1">
@@ -234,6 +304,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const mic = useDictation((t) => setDraft(t));
+  const [fileOpen, setFileOpen] = useState(false);
 
   useEffect(() => {
     const el = scroller.current;
@@ -271,7 +342,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
             </div>
           )}
           {api.msgs.map((m, i) => (
-            <Row key={m.id} m={m} next={api.msgs[i + 1]} api={api} />
+            <Row key={m.id} m={m} next={api.msgs[i + 1]} api={api} onFile={() => setFileOpen(true)} />
           ))}
           {lastIsMine && <div className="-mt-1 px-4 pb-2 text-right text-[11px] text-ph-sub">Delivered</div>}
           {api.typing && <Typing />}
@@ -357,6 +428,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
         </form>
         {!fullscreen && <div className="pointer-events-none absolute bottom-2 left-1/2 h-[5px] w-32 -translate-x-1/2 rounded-full bg-ph-ink opacity-80" aria-hidden />}
 
+        {fileOpen && <AidFileSheet profile={api.profile} onClose={() => setFileOpen(false)} />}
         {api.plaidOpen && <PlaidSheet onClose={() => api.setPlaidOpen(false)} onDone={() => void api.plaidDone()} />}
       </div>
     </div>

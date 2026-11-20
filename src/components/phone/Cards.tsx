@@ -26,12 +26,9 @@ export function LinkCard({ title, url, onOpen, brand = "firstbill" }: { title: s
           <span className="text-[11px] opacity-75">My Aid · Download My Aid Data</span>
         </div>
       ) : brand === "plaid" ? (
-        <div className="flex h-[118px] flex-col items-center justify-center gap-1.5 bg-[#111] text-white">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/10">
-            <Landmark className="h-6 w-6" />
-          </span>
-          <span className="text-[15px] font-bold tracking-tight">Connect your bank</span>
-          <span className="text-[11px] opacity-75">Secure, read-only link</span>
+        <div className="flex h-[118px] flex-col items-center justify-center gap-2 border-b border-ph-sep bg-white text-black">
+          <PlaidLogo className="h-8" />
+          <span className="text-[12px] font-medium text-[#555]">Read-only. Can't move money.</span>
         </div>
       ) : (
         <div className="flex h-24 items-center justify-center gap-2 bg-[#0b6b52] text-white">
@@ -46,6 +43,22 @@ export function LinkCard({ title, url, onOpen, brand = "firstbill" }: { title: s
         </div>
       </div>
     </button>
+  );
+}
+
+const TILES = [-1, 0, 1];
+
+/** Plaid's tartan-style mark and wordmark, drawn inline so the page needs no outside image. */
+export function PlaidLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 142 48" className={className} role="img" aria-label="Plaid" fill="currentColor">
+      <g transform="translate(24 24) rotate(45)">
+        {TILES.flatMap((r) =>
+          TILES.map((c) => <rect key={`${r}${c}`} x={c * 10 - 4.2} y={r * 10 - 4.2} width="8.4" height="8.4" rx="1.6" opacity={(r + c) % 2 === 0 ? 1 : 0.55} />),
+        )}
+      </g>
+      <text x="50" y="33" fontFamily="system-ui, -apple-system, Helvetica, Arial, sans-serif" fontSize="25" fontWeight="800" letterSpacing="1.5">PLAID</text>
+    </svg>
   );
 }
 

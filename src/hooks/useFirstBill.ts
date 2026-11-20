@@ -256,7 +256,7 @@ export function useFirstBill() {
       [
         { kind: "text", from: "bot", text: `Got it: ${p.loans.length} federal loans, ${money(totalBalance(p)).replace(".00", "")}, with ${p.servicer.split(" ")[0]}. Your grace period ends ${fmtShort(p.graceEnds)}.` },
         { kind: "text", from: "bot", text: "Last step: link your bank so I can warn you before an overdraft. Read-only." },
-        { kind: "link", from: "bot", title: "Connect your bank", url: "plaid.com", action: "plaid", brand: "plaid" },
+        { kind: "link", from: "bot", title: "Connect your bank with Plaid", url: "secure.plaid.com", action: "plaid", brand: "plaid" },
       ],
       myRun,
     );
