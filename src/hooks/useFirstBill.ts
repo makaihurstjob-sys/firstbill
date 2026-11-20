@@ -43,7 +43,7 @@ export type Chip = { label: string; onPick: () => void; primary?: boolean };
 export type Banner = { title: string; body: string } | null;
 export type Source = "claude" | "backup" | null;
 
-type Stage = "start" | "stopped" | "noBank" | "triageAsk" | "triageDone" | "askName" | "askPay" | "askLoans" | "askBank" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
+type Stage = "start" | "stopped" | "remindAsk" | "wrapped" | "noBank" | "triageAsk" | "triageDone" | "askName" | "askPay" | "askLoans" | "askBank" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
 
 let idSeq = 0;
 const nid = () => `m${++idSeq}`;
@@ -111,6 +111,7 @@ export function useFirstBill() {
   const autoRef = useRef(false);
   const onboard = useRef<{ firstName: string; payday: number }>({ firstName: "", payday: 18 });
   const decodeCtl = useRef<AbortController | null>(null);
+  const boostAmt = useRef(BOOST);
   const plan = useRef<TriagePlan | null>(null);
 
   useEffect(() => {
@@ -362,6 +363,7 @@ export function useFirstBill() {
     if (!ok) return;
     setChips([
       { label: "YES", primary: true, onPick: () => void latest.current.yes() },
+      { label: "No thanks", onPick: () => void latest.current.declineFix("No thanks") },
       { label: "Why not just pay it?", onPick: () => void latest.current.ask("Why not just pay it?") },
       { label: "What's a grace period?", onPick: () => void latest.current.ask("What's a grace period?") },
     ]);
@@ -469,7 +471,8 @@ export function useFirstBill() {
     setBanner(null);
     const ok = await botSays(
       [
-        { kind: "text", from: "bot", text: `I see your paycheck landed: +${money(p.paycheck).replace(".00", "")}. After this month's bills you'd still have ${money(left)}.` },
+        { kind: "text", from: "bot", text: `I see your paycheck landed: +${money(p.paycheck).replace(".00", "")}. Checking is at ${money(left + a.payment)} now.` },
+        { kind: "text", from: "bot", text: `After your ${money(a.payment)} loan payment on the ${ordinal(a.newDue.getDate())}, you'd still have ${money(left)} until next payday.` },
         { kind: "text", from: "bot", text: `Want to put ${money(BOOST).replace(".00", "")} extra toward your loan each month? At ${p.loans[0].rate}%, that saves about ${money(b.saved).replace(/\.\d\d$/, "")} in interest and you'd be done ${b.sooner} months sooner.` },
         { kind: "text", from: "bot", text: `$50 a month would save about ${money(b50.saved).replace(/\.\d\d$/, "")} and finish ${b50.sooner} months sooner. Which feels doable?` },
       ],
@@ -484,18 +487,58 @@ export function useFirstBill() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botSays, push]);
 
-  const boostYes = useCallback(async (amt: number = BOOST) => {
+  const endChips = useCallback(
+    (): Chip[] => [
+      { label: "Short on cash? Try Pay This First", onPick: () => void latest.current.send("I have $180. Rent 550, card 40, loan 310, electric 60") },
+      { label: "Forward a loan letter", onPick: () => void latest.current.forwardNotice() },
+      { label: "Start over", onPick: () => void latest.current.reset() },
+    ],
+    [],
+  );
+
+  const boostYes = useCallback(async (amt: number = BOOST, said?: string) => {
     const myRun = run.current;
     if (stage.current !== "boost") return;
-    stage.current = "boosted";
+    stage.current = "remindAsk";
+    boostAmt.current = amt;
     setChips([]);
-    push({ kind: "text", from: "me", text: amt === BOOST ? "YES" : `$${amt} a month` });
+    push({ kind: "text", from: "me", text: said ?? `$${amt} a month` });
+    const p = profile.current;
+    const b = boostMath(p, alert.current.payment, amt);
     const ok = await botSays(
-      [{ kind: "text", from: "bot", text: `Nice. Want me to remind you each payday? I'll only ask when your bank can spare $${amt}. Tip: tell ${profile.current.servicer.split(" ")[0]} the extra goes to principal.` }],
+      [
+        { kind: "text", from: "bot", text: `Nice choice. $${amt} extra a month saves about ${money(b.saved).replace(/\.\d\d$/, "")} and you'd be done ${b.sooner} months sooner.` },
+        { kind: "text", from: "bot", text: `Want me to remind you each payday? I'll only ask when your bank can spare it.` },
+      ],
       myRun,
     );
-    if (ok) setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }, { label: "Start over", onPick: () => void latest.current.reset() }]);
-  }, [botSays, push]);
+    if (ok)
+      setChips([
+        { label: "Yes, remind me", primary: true, onPick: () => void latest.current.remind(true, "Yes, remind me") },
+        { label: "No thanks", onPick: () => void latest.current.remind(false, "No thanks") },
+      ]);
+  }, [botSays, push, setChips]);
+
+  const remind = useCallback(async (on: boolean, said: string) => {
+    const myRun = run.current;
+    if (stage.current !== "remindAsk") return;
+    stage.current = "wrapped";
+    setChips([]);
+    push({ kind: "text", from: "me", text: said });
+    const p = profile.current;
+    const next = new Date(p.payday);
+    next.setMonth(next.getMonth() + 1);
+    const ok = await botSays(
+      on
+        ? [
+            { kind: "text", from: "bot", text: `Done. I'll text you next payday, ${fmtShort(next)}, before you spend it.` },
+            { kind: "text", from: "bot", text: `Tip: when you pay extra, tell ${p.servicer.split(" ")[0]} it goes to principal so it cuts your balance, not next month's bill.` },
+          ]
+        : [{ kind: "text", from: "bot", text: `No problem. You can still send extra anytime. I'll keep watching your bills either way.` }],
+      myRun,
+    );
+    if (ok) setChips(endChips());
+  }, [botSays, push, setChips, endChips]);
 
   const boostNo = useCallback(async () => {
     const myRun = run.current;
@@ -503,8 +546,9 @@ export function useFirstBill() {
     stage.current = "boosted";
     setChips([]);
     push({ kind: "text", from: "me", text: "Not now" });
-    const ok = await botSays([{ kind: "text", from: "bot", text: "No problem. I'll ask again next payday." }], myRun);
-    if (ok) setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }, { label: "Start over", onPick: () => void latest.current.reset() }]);
+    stage.current = "wrapped";
+    const ok = await botSays([{ kind: "text", from: "bot", text: "No problem. I'll ask again next payday, only if your bank can spare it." }], myRun);
+    if (ok) setChips(endChips());
   }, [botSays, push]);
 
   /* ---------------- Scene 3: a forwarded notice, decoded by Claude ---------------- */
@@ -727,7 +771,7 @@ export function useFirstBill() {
       const ok = await botSays(triageTexts(pl).map((t) => ({ kind: "text", from: "bot", text: t }) as MsgBody), myRun);
       if (!ok) return;
       setChips([
-        ...(pl.scriptFor ? [{ label: "YES", primary: true, onPick: () => void latest.current.yes() }] : []),
+        ...(pl.scriptFor ? [{ label: "YES", primary: true, onPick: () => void latest.current.yes() }, { label: "No thanks", onPick: () => void latest.current.send("No thanks") }] : []),
         { label: "What's a forbearance?", onPick: () => void latest.current.ask("What's a forbearance?") },
       ]);
     },
@@ -834,7 +878,31 @@ export function useFirstBill() {
     [botSays, push, setChips, startChip],
   );
 
-  latest.current = { yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo, answerPay, attachAid, whereAid, openPlaid, skipBank, nudge };
+  /** "No" to the due-date fix: say what to watch instead, then keep the story moving to payday. */
+  const declineFix = useCallback(
+    async (said: string) => {
+      const myRun = run.current;
+      if (stage.current !== "alerted") return;
+      stage.current = "drafted";
+      setChips([]);
+      push({ kind: "text", from: "me", text: said });
+      const a = alert.current;
+      const ok = await botSays(
+        [
+          { kind: "text", from: "bot", text: `No problem. Then try to have ${money(-Math.min(a.low, 0) + 25).replace(".00", "")} extra in checking before ${fmtShort(a.lowDate)} so the car insurance doesn't overdraft you.` },
+          { kind: "text", from: "bot", text: `I'll check your balance again on ${fmtShort(addDays(a.lowDate, -2))}.` },
+        ],
+        myRun,
+      );
+      if (!ok) return;
+      await sleep(reduceMotion() ? 300 : 1800);
+      if (run.current !== myRun) return;
+      await latest.current.paydayBoost();
+    },
+    [botSays, push, setChips],
+  );
+
+  latest.current = { yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo, answerPay, attachAid, whereAid, openPlaid, skipBank, nudge, remind, declineFix };
 
   /** Anything typed into the composer. */
   const send = useCallback(
@@ -894,15 +962,25 @@ export function useFirstBill() {
           if (/^(ok|okay|connect|link|done|sure|go)\b/i.test(text) || isYes) return void openPlaid();
           return void ask(text);
         case "alerted":
+          if (isYes) return void yes();
+          if (isNo) return void latest.current.declineFix(text);
+          break;
         case "noticeAsk":
         case "triageAsk":
           if (isYes) return void yes();
-          if (isNo) return void reply(text, ["No problem. Reply YES anytime and I'll write it."]);
+          if (isNo) {
+            stage.current = st === "triageAsk" ? "triageDone" : "noticeDrafted";
+            return void reply(text, ["No problem. If you change your mind, just ask me to write it."]);
+          }
           break;
         case "boost":
-          if (/50/.test(text)) return void latest.current.boostYes(50);
-          if (isYes || /25/.test(text)) return void latest.current.boostYes();
+          if (/50/.test(text)) return void latest.current.boostYes(50, text);
+          if (isYes || /25/.test(text)) return void latest.current.boostYes(BOOST, text);
           if (isNo) return void latest.current.boostNo();
+          break;
+        case "remindAsk":
+          if (isYes || /remind/i.test(text)) return void latest.current.remind(true, text);
+          if (isNo) return void latest.current.remind(false, text);
           break;
       }
       if (looksLikeNotice(text)) return void pasteNotice(text);

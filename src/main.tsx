@@ -12,7 +12,8 @@ async function checkForUpdate() {
     const { build } = (await r.json()) as { build?: string };
     if (build && build !== __BUILD__ && sessionStorage.getItem("fb-reloaded") !== build) {
       sessionStorage.setItem("fb-reloaded", build);
-      location.reload();
+      // A new URL skips the cached page (GitHub Pages caches HTML for 10 minutes), keeping #phone.
+      location.replace(`${location.pathname}?v=${encodeURIComponent(build)}${location.hash}`);
     }
   } catch {
     /* offline or storage blocked: keep the current build */
