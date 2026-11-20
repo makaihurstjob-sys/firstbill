@@ -51,7 +51,7 @@ export function buildReplyPrompt(context: string, turns: ChatTurn[]): ChatTurn[]
 What you know about this user right now:
 ${context}
 
-Answer the user's latest text in under 55 words, as one text message. If they ask you to pay, log in or change their account, say you can draft the message for them to send instead. If they say YES, tell them to tap the YES button above.`;
+Answer the user's latest text in under 55 words, as one text message. If they ask you to pay, log in or change their account, say you can draft the message for them to send instead. If they say YES, tell them to tap the YES button above. If the question has nothing to do with their money, bills or loans, or is too specific to answer from what you know, reply exactly: "I'm not sure I can answer that. Please ask a different question."`;
   const recent = turns.slice(-8);
   return [{ role: "user", content: rules }, ...recent];
 }
