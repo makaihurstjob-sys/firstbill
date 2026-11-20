@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AudioLines, ChevronLeft, FileText, Plus, RotateCcw, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FirstBillApi, Msg } from "@/hooks/useFirstBill";
@@ -385,6 +385,15 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
   const [draft, setDraft] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  // Like iMessage, the field grows as a text wraps (up to about 5 lines), then scrolls.
+  useLayoutEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const h = Math.min(el.scrollHeight, 112);
+    el.style.height = `${Math.max(h, 34)}px`;
+    el.style.overflowY = el.scrollHeight > 112 ? "auto" : "hidden";
+  }, [draft]);
   // No custom dictation: like iMessage, the keyboard's own mic does it (and iOS shows no extra start/stop notices).
   // Dictation: tap to start/stop, or press and hold to talk. Falls back to opening the keyboard (its own mic) where unsupported.
   const dict = useDictation((t) => setDraft(t));
