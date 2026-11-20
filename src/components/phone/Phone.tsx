@@ -347,7 +347,8 @@ function useDictation(onText: (t: string) => void) {
       rec.current = r; r.start(); setOn(true);
     } catch { setOn(false); }
   };
-  return { supported: Boolean(Ctor), on, toggle };
+  const stop = () => rec.current?.stop();
+  return { supported: Boolean(Ctor), on, toggle, stop };
 }
 
 const HINTS: Record<string, string> = {
@@ -362,7 +363,10 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   // No custom dictation: like iMessage, the keyboard's own mic does it (and iOS shows no extra start/stop notices).
-  const mic = { on: false, supported: true, toggle: () => input.current?.focus() };
+  // Dictation: tap to start/stop, or press and hold to talk. Falls back to opening the keyboard (its own mic) where unsupported.
+  const dict = useDictation((t) => setDraft(t));
+  const mic = { on: dict.on, supported: true, toggle: () => (dict.supported ? dict.toggle() : input.current?.focus()) };
+  const holdMic = useRef<{ t: number; held: boolean } | null>(null);
   const [fileOpen, setFileOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const [held, setHeld] = useState<Held | null>(null);
@@ -581,9 +585,21 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
             ) : mic.supported ? (
               <button
                 type="button"
-                onClick={mic.toggle}
-                className="mb-[3px] grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full text-ph-sub"
-                aria-label="Open the keyboard"
+                onPointerDown={() => {
+                  const wasOn = dict.on;
+                  if (!wasOn) mic.toggle();
+                  holdMic.current = { t: Date.now(), held: !wasOn };
+                }}
+                onPointerUp={() => {
+                  const h = holdMic.current;
+                  holdMic.current = null;
+                  if (!h) return;
+                  if (!h.held) dict.stop(); // tap while listening: stop
+                  else if (Date.now() - h.t > 450) dict.stop(); // press and hold: stop on release
+                }}
+                onContextMenu={(e) => e.preventDefault()}
+                className={cn("mb-[3px] grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full", mic.on ? "mic-live bg-[#ff3b30] text-white" : "text-ph-sub")}
+                aria-label={mic.on ? "Stop dictation" : "Dictate (tap, or press and hold)"}
               >
                 <AudioLines className="h-[19px] w-[19px]" />
               </button>
