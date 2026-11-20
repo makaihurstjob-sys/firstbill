@@ -37,16 +37,57 @@ export type MsgBody =
   | { kind: "draft"; from: "bot"; to: string; text: string }
   | { kind: "file"; from: "me"; name: string; size: string }
   | { kind: "divider"; text: string; lead?: string; sub?: string };
-export type Msg = MsgBody & { id: string };
+/** nfa: this bubble ends a reply, so it carries the "This is not financial advice." line. */
+type Out = MsgBody & { nfa?: boolean };
+export type Msg = Out & { id: string };
 
 export type Chip = { label: string; onPick: () => void; primary?: boolean };
 export type Banner = { title: string; body: string } | null;
 export type Source = "claude" | "backup" | null;
 
-type Stage = "start" | "stopped" | "remindAsk" | "wrapped" | "noBank" | "triageAsk" | "triageDone" | "askName" | "askPay" | "askLoans" | "askBank" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
+type Stage = "start" | "stopped" | "followUp" | "remindAsk" | "wrapped" | "noBank" | "triageAsk" | "triageDone" | "askName" | "askPay" | "askLoans" | "askBank" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
 
 let idSeq = 0;
 const nid = () => `m${++idSeq}`;
+/** The check-ins PayPing promised ("I'll check on Dec 1…"), each one actually sent later. */
+type FuKey = "due" | "balance" | "triage" | "notice";
+type DueState = "asked" | "confirmed" | "pending" | "declined" | null;
+type Onboard = { firstName: string; payday: number; guess?: boolean };
+const EXAMPLE = "I have $180. Rent 550, card 40, loan 310, electric 60";
+/** The whole conversation is saved in this browser, so leaving and coming back resumes it. Only Start over clears it. */
+const SAVE_KEY = "payping-chat-v1";
+type Saved = {
+  v: 1;
+  today: string;
+  msgs: Msg[];
+  stage: Stage;
+  onboard: Onboard;
+  plan: TriagePlan | null;
+  decode: Decode | null;
+  contactName: string;
+  boostAmt: number;
+  due: DueState;
+  fu: FuKey | null;
+  seq: number;
+};
+function loadSaved(): Saved | null {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as Saved;
+    if (s?.v !== 1 || !Array.isArray(s.msgs) || !s.msgs.length) return null;
+    return s;
+  } catch {
+    return null;
+  }
+}
+function clearSaved() {
+  try {
+    localStorage.removeItem(SAVE_KEY);
+  } catch {
+    /* storage blocked */
+  }
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const GAP_DAYS = 2;
 /** ?fast in the link: quicker texting, only for recording the promo video. */
@@ -79,14 +120,20 @@ export interface SignupInfo {
 }
 
 export function useFirstBill() {
-  const today = useMemo(() => new Date(), []);
-  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const saved = useRef<Saved | null | undefined>(undefined);
+  if (saved.current === undefined) {
+    saved.current = FAST ? null : loadSaved();
+    if (saved.current) idSeq = Math.max(idSeq, saved.current.seq || 0, ...saved.current.msgs.map((m) => Number(String(m.id).replace(/\D/g, "")) || 0));
+  }
+  const sv = saved.current;
+  const today = useMemo(() => (sv?.today ? new Date(sv.today) : new Date()), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [msgs, setMsgs] = useState<Msg[]>(() => sv?.msgs ?? []);
   const [typing, setTyping] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const latest = useRef<Record<string, (...args: any[]) => any>>({});
   const startChip: Chip = useMemo(() => ({ label: "JOIN", primary: true, onPick: () => void latest.current.join() }), []);
-  const [chips, setChipsState] = useState<Chip[]>([startChip]);
-  const chipsRef = useRef<Chip[]>([startChip]);
+  const [chips, setChipsState] = useState<Chip[]>(sv ? [] : [startChip]);
+  const chipsRef = useRef<Chip[]>(sv ? [] : [startChip]);
   const setChips = useCallback((c: Chip[]) => {
     chipsRef.current = c;
     setChipsState(c);
@@ -99,20 +146,53 @@ export function useFirstBill() {
   const [balance, setBalance] = useState(450.18);
   const [busy, setBusy] = useState(false);
   const [autoplaying, setAutoplaying] = useState(false);
-  const [contactName, setContactName] = useState("34778");
+  const [contactName, setContactName] = useState(sv?.contactName ?? "34778");
 
   const run = useRef(0); // bumps on reset so stale sequences stop
-  const stage = useRef<Stage>("start");
-  const profile = useRef<Profile>(makeProfile(today));
+  const stage = useRef<Stage>(sv?.stage ?? "start");
+  const profile = useRef<Profile>(makeProfile(today, sv ? { firstName: sv.onboard.firstName || undefined, payday: sv.onboard.payday } : {}));
   const alert = useRef<Alert>(computeAlert(profile.current, today));
-  const decode = useRef<Decode | null>(null);
-  const turns = useRef<ChatTurn[]>([]);
+  if (sv && sv.msgs.some((m) => m.kind === "divider" && m.sub === `${GAP_DAYS} days later`)) {
+    // The heads-up already happened, so keep its "N days from now" in step with what was said.
+    alert.current = { ...alert.current, graceDays: daysBetween(addDays(today, GAP_DAYS), profile.current.graceEnds) };
+  }
+  const decode = useRef<Decode | null>(sv?.decode ?? null);
+  const turns = useRef<ChatTurn[]>(
+    sv ? sv.msgs.filter((m) => m.kind === "text").map((m) => ({ role: m.from === "me" ? "user" : "assistant", content: (m as { text: string }).text }) as ChatTurn) : [],
+  );
   const skipLive = useRef<(() => void) | null>(null);
   const autoRef = useRef(false);
-  const onboard = useRef<{ firstName: string; payday: number }>({ firstName: "", payday: 18 });
+  const onboard = useRef<Onboard>(sv?.onboard ?? { firstName: "", payday: 18 });
   const decodeCtl = useRef<AbortController | null>(null);
-  const boostAmt = useRef(BOOST);
-  const plan = useRef<TriagePlan | null>(null);
+  const boostAmt = useRef(sv?.boostAmt ?? BOOST);
+  const plan = useRef<TriagePlan | null>(sv?.plan ?? null);
+  const due = useRef<DueState>(sv?.due ?? null);
+  const fu = useRef<FuKey | null>(sv?.fu ?? null);
+
+  // Save after every change (not while recording with ?fast).
+  useEffect(() => {
+    if (FAST) return;
+    try {
+      if (!msgs.length) return void localStorage.removeItem(SAVE_KEY);
+      const s: Saved = {
+        v: 1,
+        today: today.toISOString(),
+        msgs,
+        stage: stage.current,
+        onboard: onboard.current,
+        plan: plan.current,
+        decode: decode.current,
+        contactName,
+        boostAmt: boostAmt.current,
+        due: due.current,
+        fu: fu.current,
+        seq: idSeq,
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+    } catch {
+      /* storage full or blocked: the chat still works, it just won't resume */
+    }
+  }, [msgs, chips, contactName, today]);
 
   useEffect(() => {
     let alive = true;
@@ -124,7 +204,7 @@ export function useFirstBill() {
 
   const useLive = aiMode !== "checking" && aiMode !== "none" && liveOn;
 
-  const push = useCallback((m: MsgBody | MsgBody[]) => {
+  const push = useCallback((m: Out | Out[]) => {
     const list = (Array.isArray(m) ? m : [m]).map((x) => ({ ...x, id: nid() }) as Msg);
     setMsgs((prev) => [...prev, ...list]);
     for (const x of list) {
@@ -142,7 +222,7 @@ export function useFirstBill() {
         await sleep(reduceMotion() ? 120 : FAST ? Math.min(1100, 380 + len * 4.5) : Math.min(2100, 720 + len * 9.5));
         if (run.current !== myRun) return false;
         setTyping(false);
-        push(item);
+        push(item === items[items.length - 1] && item.kind !== "divider" && item.from === "bot" ? { ...item, nfa: true } : item);
         await sleep(reduceMotion() ? 40 : FAST ? 150 : 520);
       }
       return run.current === myRun;
@@ -171,6 +251,9 @@ export function useFirstBill() {
     stage.current = "start";
     decode.current = null;
     plan.current = null;
+    due.current = null;
+    fu.current = null;
+    clearSaved();
     turns.current = [];
     skipLive.current = null;
     setMsgs([]);
@@ -219,13 +302,9 @@ export function useFirstBill() {
       stage.current = "askPay";
       const ok = await botSays([{ kind: "text", from: "bot", text: `Nice to meet you, ${name}. What day do you get paid?` }], myRun);
       if (!ok) return;
-      setChips([
-        { label: "The 1st", onPick: () => void latest.current.answerPay(1, "The 1st") },
-        { label: "The 15th", onPick: () => void latest.current.answerPay(15, "The 15th") },
-        { label: "The 18th", onPick: () => void latest.current.answerPay(18, "The 18th") },
-        { label: "Not sure", onPick: () => void latest.current.answerPay(0, "Not sure") },
-      ]);
+      setChips(chipsFor("askPay"));
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [botSays, push, setChips],
   );
 
@@ -236,17 +315,18 @@ export function useFirstBill() {
       setChips([]);
       push({ kind: "text", from: "me", text: said });
       onboard.current.payday = dom >= 1 && dom <= 28 ? dom : 18;
+      onboard.current.guess = !dom;
       stage.current = "askLoans";
       const ok = await botSays(
         [
-          { kind: "text", from: "bot", text: dom ? `Got it, the ${ordinal(onboard.current.payday)}.` : "No problem. I'll spot it in your bank. Looks like the 18th." },
+          { kind: "text", from: "bot", text: dom ? `Got it, the ${ordinal(onboard.current.payday)}.` : "No problem. If you link your bank in a minute, I can find it from your paychecks. Until then I'll guess the 18th." },
           { kind: "text", from: "bot", text: "Now your student loans. Grab your file here, then send it to me." },
           { kind: "link", from: "bot", title: "Download My Aid Data", url: "studentaid.gov", action: "aid", brand: "studentaid" },
         ],
         myRun,
       );
       if (!ok) return;
-      setChips([{ label: "Attach my aid file", primary: true, onPick: () => void latest.current.attachAid() }]);
+      setChips(chipsFor("askLoans"));
     },
     [botSays, push, setChips],
   );
@@ -276,11 +356,8 @@ export function useFirstBill() {
       ],
       myRun,
     );
-    if (ok)
-      setChips([
-        { label: "Connect my bank", primary: true, onPick: () => void latest.current.openPlaid() },
-        { label: "Skip, I'll text my numbers", onPick: () => void latest.current.skipBank() },
-      ]);
+    if (ok) setChips(chipsFor("askBank"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botSays, push, recompute, setChips]);
 
   const [plaidOpen, setPlaidOpen] = useState(false);
@@ -298,6 +375,7 @@ export function useFirstBill() {
     const ok = await botSays(
       [
         { kind: "text", from: "bot", text: `Connected: checking ••${p.checkingLast4} at First Platypus Bank.` },
+        ...(onboard.current.guess ? [{ kind: "text", from: "bot", text: `I can see your paychecks land on the ${ordinal(p.payday.getDate())}, so I'll use that.` } as MsgBody] : []),
         { kind: "text", from: "bot", text: `You're set, ${p.firstName}. I'll only text when something needs you.` },
       ],
       myRun,
@@ -344,7 +422,7 @@ export function useFirstBill() {
       const okCovered = await botSays(items, myRun);
       if (!okCovered) return;
       stage.current = "covered";
-      setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }]);
+      setChips(chipsFor("covered"));
       return;
     }
     items.push(
@@ -361,12 +439,7 @@ export function useFirstBill() {
     );
     const ok = await botSays(items, myRun);
     if (!ok) return;
-    setChips([
-      { label: "YES", primary: true, onPick: () => void latest.current.yes() },
-      { label: "No thanks", onPick: () => void latest.current.declineFix("No thanks") },
-      { label: "Why not just pay it?", onPick: () => void latest.current.ask("Why not just pay it?") },
-      { label: "What's a grace period?", onPick: () => void latest.current.ask("What's a grace period?") },
-    ]);
+    setChips(chipsFor("alerted"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botSays, push]);
 
@@ -403,12 +476,17 @@ export function useFirstBill() {
 
   const yes = useCallback(async () => {
     const myRun = run.current;
+    if (!["alerted", "triageAsk", "noticeAsk"].includes(stage.current)) return;
     setChips([]);
     push({ kind: "text", from: "me", text: "YES" });
     if (stage.current === "triageAsk" && plan.current) {
       const s = triageScript(plan.current, onboard.current.firstName, `the ${ordinal(onboard.current.payday || 18)}`);
       stage.current = "triageDone";
-      if (!s) return;
+      if (!s) {
+        const ok0 = await botSays([{ kind: "text", from: "bot", text: "There's nothing to send this time. Your plan already covers it." }], myRun);
+        if (ok0) setChips(chipsFor("triageDone"));
+        return;
+      }
       const ok = await botSays(
         [
           { kind: "text", from: "bot", text: `Here's a message for your ${s.to.toLowerCase()}. Tap it to copy, then send it yourself.` },
@@ -417,7 +495,10 @@ export function useFirstBill() {
         ],
         myRun,
       );
-      if (ok) setChips([{ label: "Start over", onPick: () => void latest.current.reset() }]);
+      if (!ok) return;
+      await sleep(reduceMotion() ? 300 : 2200);
+      if (run.current !== myRun) return;
+      await latest.current.followUp("triage");
       return;
     }
     if (stage.current === "noticeAsk" && decode.current) {
@@ -431,12 +512,16 @@ export function useFirstBill() {
         ],
         myRun,
       );
-      if (ok) setChips([{ label: "Start over", onPick: () => void latest.current.reset() }]);
+      if (!ok) return;
+      await sleep(reduceMotion() ? 300 : 2200);
+      if (run.current !== myRun) return;
+      await latest.current.followUp("notice");
       return;
     }
     const p = profile.current;
     const a = alert.current;
     stage.current = "drafted";
+    due.current = "asked";
     const ok = await botSays(
       [
         { kind: "text", from: "bot", text: `Here it is. Tap to copy, then paste it in ${p.servicer.split(" ")[0]}'s messages or read it on a call.` },
@@ -446,9 +531,9 @@ export function useFirstBill() {
       myRun,
     );
     if (!ok) return;
-    await sleep(reduceMotion() ? 300 : 1800);
+    await sleep(reduceMotion() ? 300 : 2200);
     if (run.current !== myRun) return;
-    await latest.current.paydayBoost();
+    await latest.current.followUp("due");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botSays, push, reset]);
 
@@ -456,6 +541,8 @@ export function useFirstBill() {
 
   const paydayBoost = useCallback(async () => {
     const myRun = run.current;
+    if (stage.current !== "drafted" && stage.current !== "followUp") return;
+    fu.current = null;
     const p = profile.current;
     const a = alert.current;
     setChips([]);
@@ -471,21 +558,26 @@ export function useFirstBill() {
     setBanner(null);
     const ok = await botSays(
       [
-        { kind: "text", from: "bot", text: `I see your paycheck landed: +${money(p.paycheck).replace(".00", "")}. Checking is at ${money(left + a.payment)} now.` },
-        { kind: "text", from: "bot", text: `After your ${money(a.payment)} loan payment on the ${ordinal(a.newDue.getDate())}, you'd still have ${money(left)} until next payday.` },
+        ...((due.current === "confirmed"
+          ? [
+              { kind: "text", from: "bot", text: `I see your paycheck landed: +${money(p.paycheck).replace(".00", "")}. Checking is at ${money(left + a.payment)} now.` },
+              { kind: "text", from: "bot", text: `After your ${money(a.payment)} loan payment on the ${ordinal(a.newDue.getDate())}, you'd still have ${money(left)} until next payday.` },
+            ]
+          : [
+              { kind: "text", from: "bot", text: `I see your paycheck landed: +${money(p.paycheck).replace(".00", "")}. After this month's bills and your ${fmtShort(p.firstPull)} loan payment, checking is at ${money(left)}.` },
+            ]) as MsgBody[]),
         { kind: "text", from: "bot", text: `Want to put ${money(BOOST).replace(".00", "")} extra toward your loan each month? At ${p.loans[0].rate}%, that saves about ${money(b.saved).replace(/\.\d\d$/, "")} in interest and you'd be done ${b.sooner} months sooner.` },
         { kind: "text", from: "bot", text: `$50 a month would save about ${money(b50.saved).replace(/\.\d\d$/, "")} and finish ${b50.sooner} months sooner. Which feels doable?` },
       ],
       myRun,
     );
     if (!ok) return;
-    setChips([
-      { label: `${money(BOOST).replace(".00", "")} a month`, primary: true, onPick: () => void latest.current.boostYes(BOOST) },
-      { label: "$50 a month", onPick: () => void latest.current.boostYes(50) },
-      { label: "Not now", onPick: () => void latest.current.boostNo() },
-    ]);
+    setChips(chipsFor("boost"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botSays, push]);
+
+  /** A round number that covers the shortfall, e.g. $23.21 short → keep $30 extra. */
+  const cushion = () => Math.max(10, Math.ceil(-Math.min(alert.current.low, 0) / 10) * 10);
 
   const endChips = useCallback(
     (): Chip[] => [
@@ -512,11 +604,8 @@ export function useFirstBill() {
       ],
       myRun,
     );
-    if (ok)
-      setChips([
-        { label: "Yes, remind me", primary: true, onPick: () => void latest.current.remind(true, "Yes, remind me") },
-        { label: "No thanks", onPick: () => void latest.current.remind(false, "No thanks") },
-      ]);
+    if (ok) setChips(chipsFor("remindAsk"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botSays, push, setChips]);
 
   const remind = useCallback(async (on: boolean, said: string) => {
@@ -540,12 +629,12 @@ export function useFirstBill() {
     if (ok) setChips(endChips());
   }, [botSays, push, setChips, endChips]);
 
-  const boostNo = useCallback(async () => {
+  const boostNo = useCallback(async (said = "Not now") => {
     const myRun = run.current;
     if (stage.current !== "boost") return;
     stage.current = "boosted";
     setChips([]);
-    push({ kind: "text", from: "me", text: "Not now" });
+    push({ kind: "text", from: "me", text: said });
     stage.current = "wrapped";
     const ok = await botSays([{ kind: "text", from: "bot", text: "No problem. I'll ask again next payday, only if your bank can spare it." }], myRun);
     if (ok) setChips(endChips());
@@ -638,12 +727,7 @@ export function useFirstBill() {
       stage.current = "noticeAsk";
       const ok = await botSays(items, myRun);
       if (!ok) return;
-      const extra = /forbear/i.test(d.next_action) ? "What's a forbearance?" : d.jargon[0] ? `What does "${d.jargon[0].term}" mean?` : "Other options?";
-      setChips([
-        { label: "YES", primary: true, onPick: () => void latest.current.yes() },
-        { label: extra, onPick: () => void latest.current.ask(extra) },
-        { label: "Other options?", onPick: () => void latest.current.ask("Other options?") },
-      ].filter((c, i, arr) => arr.findIndex((x) => x.label === c.label) === i));
+      setChips(chipsFor("noticeAsk"));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [aiMode, botSays, today, useLive, yes],
@@ -720,7 +804,7 @@ export function useFirstBill() {
     if (term) return `${term.term}: ${term.meaning}`;
     if (/delinquen/.test(s)) return "Delinquent just means behind on payments. It turns into a credit problem at 90 days late for federal loans.";
     if (/default/.test(s)) return "Default is 270 days late on a federal loan. Your whole balance can come due, and the government can take your tax refund and up to 15% of your take-home pay. Those collections are paused right now but can restart, so we fix things way before then.";
-    return "I'm best with student loans and bills. Ask me about your payment or a word like \"forbearance\", text me your cash and bills, or text HELP.";
+    return "I'm not sure I can answer that. Please ask a different question.";
   }, []);
 
   const ask = useCallback(
@@ -740,12 +824,13 @@ export function useFirstBill() {
         answer = cannedAnswer(q);
       }
       setTyping(false);
-      push({ kind: "text", from: "bot", text: answer });
-      const nd = ["start", "askName", "askPay", "askLoans", "askBank", "noBank"].includes(stage.current) ? latest.current.nudge?.() : null;
-      if (nd && !answer.includes(nd)) {
+      const nd0 = ["start", "askName", "askPay", "askLoans", "askBank", "noBank"].includes(stage.current) ? latest.current.nudge?.() : null;
+      const nd = nd0 && !answer.includes(nd0) ? nd0 : null;
+      push({ kind: "text", from: "bot", text: answer, nfa: !nd });
+      if (nd) {
         await sleep(reduceMotion() ? 60 : 500);
         if (run.current !== myRun) return;
-        push({ kind: "text", from: "bot", text: nd });
+        push({ kind: "text", from: "bot", text: nd, nfa: true });
       }
       if (/^stop\b/i.test(q)) {
         setChips([{ label: "JOIN", primary: true, onPick: () => { latest.current.reset(); void latest.current.join(); } }]);
@@ -770,11 +855,9 @@ export function useFirstBill() {
       stage.current = "triageAsk";
       const ok = await botSays(triageTexts(pl).map((t) => ({ kind: "text", from: "bot", text: t }) as MsgBody), myRun);
       if (!ok) return;
-      setChips([
-        ...(pl.scriptFor ? [{ label: "YES", primary: true, onPick: () => void latest.current.yes() }, { label: "No thanks", onPick: () => void latest.current.send("No thanks") }] : []),
-        { label: "What's a forbearance?", onPick: () => void latest.current.ask("What's a forbearance?") },
-      ]);
+      setChips(chipsFor("triageAsk"));
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [botSays, push, setChips],
   );
 
@@ -787,11 +870,12 @@ export function useFirstBill() {
     await botSays(
       [
         { kind: "text", from: "bot", text: "No problem. No bank link needed. Nothing is stored." },
+        ...(onboard.current.guess ? [{ kind: "text", from: "bot", text: "I'll keep guessing payday is the 18th. Text me the real day anytime." } as MsgBody] : []),
         { kind: "text", from: "bot", text: "When money's tight, text me your cash and bills, like:\nI have $180. Rent 550, card 40, loan 310, electric 60" },
       ],
       myRun,
     );
-    if (run.current === myRun) setChips([{ label: "Try that example", primary: true, onPick: () => void latest.current.send("I have $180. Rent 550, card 40, loan 310, electric 60") }]);
+    if (run.current === myRun) setChips(chipsFor("noBank"));
   }, [botSays, push, setChips]);
 
   /** "Can I afford it?" from the numbers we have: their Pay This First plan, or their linked checking. */
@@ -841,7 +925,11 @@ export function useFirstBill() {
       case "alerted":
         return "Reply YES and I'll write the due date request.";
       case "boost":
-        return `Reply YES to add ${money(BOOST).replace(".00", "")} a month, or Not now.`;
+        return `Reply YES to add ${money(BOOST).replace(".00", "")} a month, 50 for $50, or Not now.`;
+      case "remindAsk":
+        return "Reply YES and I'll remind you each payday, or NO.";
+      case "followUp":
+        return fu.current && fu.current !== "balance" ? "Reply YES or NO." : null;
       case "noticeAsk":
       case "triageAsk":
         return "Reply YES and I'll write the message for you.";
@@ -889,20 +977,240 @@ export function useFirstBill() {
       const a = alert.current;
       const ok = await botSays(
         [
-          { kind: "text", from: "bot", text: `No problem. Then try to have ${money(-Math.min(a.low, 0) + 25).replace(".00", "")} extra in checking before ${fmtShort(a.lowDate)} so the car insurance doesn't overdraft you.` },
+          { kind: "text", from: "bot", text: `No problem. Then try to have ${usd0(cushion())} extra in checking before ${fmtShort(a.lowDate)} so the car insurance doesn't overdraft you.` },
           { kind: "text", from: "bot", text: `I'll check your balance again on ${fmtShort(addDays(a.lowDate, -2))}.` },
         ],
         myRun,
       );
       if (!ok) return;
-      await sleep(reduceMotion() ? 300 : 1800);
+      due.current = "declined";
+      await sleep(reduceMotion() ? 300 : 2200);
       if (run.current !== myRun) return;
-      await latest.current.paydayBoost();
+      await latest.current.followUp("balance");
     },
     [botSays, push, setChips],
   );
 
-  latest.current = { yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo, answerPay, attachAid, whereAid, openPlaid, skipBank, nudge, remind, declineFix };
+  /** What PayPing says when it checks back in, and the answers it understands. */
+  const fuSpec = useCallback((key: FuKey) => {
+    const p = profile.current;
+    const a = alert.current;
+    const S = p.servicer.split(" ")[0];
+    const name = onboard.current.firstName;
+    const day = (d: Date) => `${d.toLocaleDateString("en-US", { weekday: "long" })}, ${fmtShort(d)}`;
+    type Opt = { label: string; primary?: boolean; test: (t: string, y: boolean, n: boolean) => boolean; replies: string[]; apply?: () => void };
+    const neg = /\b(no|not|nope|nah|haven'?t|didn'?t|never|denied|declined|refused)\b|n'?t\b/i;
+    const yesOpt = (replies: string[], apply?: () => void): Opt => ({ label: "YES", primary: true, test: (t, y) => y || (/\b(yes|yeah|yep|they did|confirmed?|approved|said yes|it worked|all set)\b/i.test(t) && !neg.test(t)), replies, apply });
+    const noOpt = (replies: string[], apply?: () => void): Opt => ({ label: "NO", test: (t, _y, n) => n || neg.test(t) || /not yet|no (reply|answer|word)|still waiting|said no/i.test(t), replies, apply });
+    if (key === "due") {
+      const d = addDays(p.firstPull, -3);
+      return {
+        lead: day(d),
+        time: "10:02 AM",
+        sub: "PayPing checks in",
+        texts: [`Hi ${name || "there"}, checking in like I said. Did ${S} confirm your new due date, the ${ordinal(a.newDue.getDate())}?`, "Reply YES or NO."],
+        options: [
+          yesOpt(
+            [`Nice! Your ${money(a.payment)} now comes out on the ${ordinal(a.newDue.getDate())}, ${daysBetween(p.payday, a.newDue)} days after payday. No overdraft on ${fmtShort(a.lowDate)}.`, "I'll text you on payday."],
+            () => (due.current = "confirmed"),
+          ),
+          noOpt(
+            [`OK. Until they confirm, your ${money(a.payment)} still comes out ${fmtDate(p.firstPull)}.`, `To be safe, keep ${usd0(cushion())} extra in checking before ${fmtShort(a.lowDate)} so your car insurance clears. Calling ${S} works too. It takes about 5 minutes.`],
+            () => (due.current = "pending"),
+          ),
+        ],
+      };
+    }
+    if (key === "balance") {
+      const d = addDays(a.lowDate, -2);
+      const bal = a.rows.filter((r) => r.date.getTime() <= d.getTime()).pop()?.after ?? p.balance;
+      return {
+        lead: day(d),
+        time: "8:15 AM",
+        sub: "PayPing checks in",
+        texts: [
+          `Balance check, like I said: you have ${money(bal)} in checking.`,
+          a.low < 0
+            ? `Car insurance takes $98 on ${fmtShort(a.lowDate)}, so you'd be ${money(-a.low)} short. Moving ${usd0(cushion())} in before then covers it.`
+            : `You're covered through payday. Lowest point: ${money(a.low)}.`,
+        ],
+        options: [] as Opt[],
+      };
+    }
+    if (key === "triage") {
+      const s = plan.current ? triageScript(plan.current, name, `the ${ordinal(onboard.current.payday || 18)}`) : null;
+      const who = (s?.to ?? "landlord").toLowerCase();
+      return {
+        lead: "Next day",
+        time: "6:30 PM",
+        sub: "PayPing checks in",
+        texts: [`Hey${name ? ` ${name}` : ""}, checking in like I said. Did your ${who} answer your message?`, "Reply YES or NO."],
+        options: [
+          yesOpt([`Great. Get the plan in writing, even a text is fine, so you both remember the dates.`, `On payday I'll remind you what's still owed.`]),
+          noOpt([`That's normal. Give it a day, then a short call works too.`, `Paying part of it now still helps. It shows you're trying.`]),
+        ],
+      };
+    }
+    const dd = decode.current;
+    const d = addDays(today, 3);
+    return {
+      lead: d.toLocaleDateString("en-US", { weekday: "long" }),
+      time: "11:15 AM",
+      sub: "3 days later",
+      texts: [`Checking in like I said. Did ${dd?.servicer ?? "your servicer"} answer your message?`, "Reply YES or NO."],
+      options: [
+        yesOpt([`Good. Ask them to confirm it in writing and screenshot it. I'll watch for your next bill.`]),
+        noOpt([`OK. Call them today. The number is on your letter. Read them the message I wrote. It takes about 10 minutes.`]),
+      ],
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
+
+  /** The quick replies for each step, in one place, so a reopened chat gets the same buttons back. */
+  const chipsFor = useCallback(
+    (st: Stage): Chip[] => {
+      const L = () => latest.current;
+      const forbearance: Chip = { label: "What's a forbearance?", onPick: () => void L().ask("What's a forbearance?") };
+      switch (st) {
+        case "start":
+        case "stopped":
+          return [startChip];
+        case "askPay":
+          return [
+            { label: "The 1st", onPick: () => void L().answerPay(1, "The 1st") },
+            { label: "The 15th", onPick: () => void L().answerPay(15, "The 15th") },
+            { label: "The 18th", onPick: () => void L().answerPay(18, "The 18th") },
+            { label: "Not sure", onPick: () => void L().answerPay(0, "Not sure") },
+          ];
+        case "askLoans":
+          return [{ label: "Attach my aid file", primary: true, onPick: () => void L().attachAid() }];
+        case "askBank":
+          return [
+            { label: "Connect my bank", primary: true, onPick: () => void L().openPlaid() },
+            { label: "Skip, I'll text my numbers", onPick: () => void L().skipBank() },
+          ];
+        case "noBank":
+          return [{ label: "Try that example", primary: true, onPick: () => void L().send(EXAMPLE) }];
+        case "signedUp":
+          return [{ label: "Continue", primary: true, onPick: () => void L().headsUp() }];
+        case "alerted":
+          return [
+            { label: "YES", primary: true, onPick: () => void L().yes() },
+            { label: "No thanks", onPick: () => void L().declineFix("No thanks") },
+            { label: "Why not just pay it?", onPick: () => void L().ask("Why not just pay it?") },
+            { label: "What's a grace period?", onPick: () => void L().ask("What's a grace period?") },
+          ];
+        case "covered":
+          return [{ label: "Forward a loan letter", onPick: () => void L().forwardNotice() }];
+        case "drafted":
+          return [{ label: "Continue", primary: true, onPick: () => void L().resumeStory() }];
+        case "followUp": {
+          if (!fu.current) return [];
+          if (fu.current === "balance") return [{ label: "Continue", primary: true, onPick: () => void L().paydayBoost() }];
+          return fuSpec(fu.current).options.map((o, i) => ({ label: o.label, primary: o.primary, onPick: () => void L().answerFollowUp(i, o.label) }));
+        }
+        case "boost":
+          return [
+            { label: `${money(BOOST).replace(".00", "")} a month`, primary: true, onPick: () => void L().boostYes(BOOST) },
+            { label: "$50 a month", onPick: () => void L().boostYes(50) },
+            { label: "Not now", onPick: () => void L().boostNo() },
+          ];
+        case "remindAsk":
+          return [
+            { label: "Yes, remind me", primary: true, onPick: () => void L().remind(true, "Yes, remind me") },
+            { label: "No thanks", onPick: () => void L().remind(false, "No thanks") },
+          ];
+        case "boosted":
+        case "wrapped":
+          return endChips();
+        case "triageAsk": {
+          const pl = plan.current;
+          return [...(pl?.scriptFor ? [{ label: "YES", primary: true, onPick: () => void L().yes() }, { label: "No thanks", onPick: () => void L().send("No thanks") }] : []), forbearance];
+        }
+        case "triageDone":
+          return [forbearance, { label: "Forward a loan letter", onPick: () => void L().forwardNotice() }, { label: "Start over", onPick: () => void L().reset() }];
+        case "noticeAsk": {
+          const d = decode.current;
+          const extra = d && /forbear/i.test(d.next_action) ? "What's a forbearance?" : d?.jargon[0] ? `What does "${d.jargon[0].term}" mean?` : "Other options?";
+          return [
+            { label: "YES", primary: true, onPick: () => void L().yes() },
+            { label: extra, onPick: () => void L().ask(extra) },
+            { label: "Other options?", onPick: () => void L().ask("Other options?") },
+          ].filter((c, i, arr) => arr.findIndex((x) => x.label === c.label) === i);
+        }
+        case "noticeDrafted":
+          return [{ label: "Short on cash? Try Pay This First", onPick: () => void L().send(EXAMPLE) }, { label: "Start over", onPick: () => void L().reset() }];
+        default:
+          return [];
+      }
+    },
+    [endChips, fuSpec, startChip],
+  );
+
+  /** PayPing checks back in when it said it would: a time jump, then one question. */
+  const followUp = useCallback(
+    async (key: FuKey) => {
+      const myRun = run.current;
+      const spec = fuSpec(key);
+      setChips([]);
+      setContactName("PayPing");
+      fu.current = key;
+      stage.current = "followUp";
+      push({ kind: "divider", lead: spec.lead, text: spec.time, sub: spec.sub });
+      setBanner({ title: "PayPing", body: spec.texts[0] });
+      await sleep(reduceMotion() ? 300 : 2000);
+      if (run.current !== myRun) return;
+      setBanner(null);
+      const ok = await botSays(spec.texts.map((t) => ({ kind: "text", from: "bot", text: t }) as MsgBody), myRun);
+      if (!ok) return;
+      if (!spec.options.length) {
+        await sleep(reduceMotion() ? 300 : 2400);
+        if (run.current !== myRun || stage.current !== "followUp") return;
+        await latest.current.paydayBoost();
+        return;
+      }
+      setChips(chipsFor("followUp"));
+    },
+    [botSays, chipsFor, fuSpec, push, setChips],
+  );
+
+  const answerFollowUp = useCallback(
+    async (i: number, said: string) => {
+      const myRun = run.current;
+      const key = fu.current;
+      if (stage.current !== "followUp" || !key) return;
+      const opt = fuSpec(key).options[i];
+      if (!opt) return;
+      setChips([]);
+      push({ kind: "text", from: "me", text: said });
+      opt.apply?.();
+      fu.current = null;
+      stage.current = key === "due" ? "drafted" : key === "triage" ? "triageDone" : "noticeDrafted";
+      const ok = await botSays(opt.replies.map((t) => ({ kind: "text", from: "bot", text: t }) as MsgBody), myRun);
+      if (!ok) return;
+      if (key !== "due") return void setChips(chipsFor(stage.current));
+      await sleep(reduceMotion() ? 300 : 2200);
+      if (run.current !== myRun) return;
+      await latest.current.paydayBoost();
+    },
+    [botSays, chipsFor, fuSpec, push, setChips],
+  );
+
+  /** "Continue" on a reopened chat that stopped between steps. */
+  const resumeStory = useCallback(async () => {
+    if (stage.current !== "drafted") return;
+    if (due.current === "asked") return void (await followUp("due"));
+    if (due.current === "declined") return void (await followUp("balance"));
+    await latest.current.paydayBoost();
+  }, [followUp]);
+
+  // A reopened chat gets the buttons for the step it was on.
+  useEffect(() => {
+    if (sv) setChips(chipsFor(stage.current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  latest.current = { yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo, answerPay, attachAid, whereAid, openPlaid, skipBank, nudge, remind, declineFix, followUp, answerFollowUp, resumeStory, headsUp };
 
   /** Anything typed into the composer. */
   const send = useCallback(
@@ -924,7 +1232,7 @@ export function useFirstBill() {
         return void reply(text, [
           "I'm PayPing. I text you before a student loan bill or an overdraft hits, with one fix and what it costs. You say YES, I write the message, you send it. I never move money.",
           "Short on cash right now? Text me your cash and bills, like: I have $180. Rent 550, card 40.",
-          ...(nudge() && st !== "start" ? [nudge() as string] : ["Text JOIN to start, STOP to quit, START OVER to reset."]),
+          ...(st === "start" || st === "stopped" ? ["Text JOIN to start, STOP to quit, START OVER to reset."] : nudge() ? [nudge() as string] : ["Text STOP to quit, or START OVER to reset."]),
         ]);
       if (gibberish) return void reply(text, ["Sorry, I didn't catch that.", nudge() ?? "Text HELP to see what I can do."]);
 
@@ -969,14 +1277,31 @@ export function useFirstBill() {
         case "triageAsk":
           if (isYes) return void yes();
           if (isNo) {
-            stage.current = st === "triageAsk" ? "triageDone" : "noticeDrafted";
-            return void reply(text, ["No problem. If you change your mind, just ask me to write it."]);
+            const next: Stage = st === "triageAsk" ? "triageDone" : "noticeDrafted";
+            stage.current = next;
+            setChips([]);
+            push({ kind: "text", from: "me", text });
+            const myRun = run.current;
+            return void botSays([{ kind: "text", from: "bot", text: "No problem. If you change your mind, just text WRITE IT and I'll draft it." }], myRun).then((ok) => ok && setChips(chipsFor(next)));
           }
           break;
+        case "triageDone":
+        case "noticeDrafted":
+          if (/^write it\b/i.test(text) && (st === "triageDone" ? plan.current?.scriptFor : decode.current)) {
+            stage.current = st === "triageDone" ? "triageAsk" : "noticeAsk";
+            return void yes();
+          }
+          break;
+        case "followUp": {
+          const spec = fu.current ? fuSpec(fu.current) : null;
+          const i = spec ? spec.options.findIndex((o) => o.test(text, isYes, isNo)) : -1;
+          if (i >= 0) return void latest.current.answerFollowUp(i, text);
+          break;
+        }
         case "boost":
           if (/50/.test(text)) return void latest.current.boostYes(50, text);
           if (isYes || /25/.test(text)) return void latest.current.boostYes(BOOST, text);
-          if (isNo) return void latest.current.boostNo();
+          if (isNo) return void latest.current.boostNo(text);
           break;
         case "remindAsk":
           if (isYes || /remind/i.test(text)) return void latest.current.remind(true, text);
@@ -984,9 +1309,11 @@ export function useFirstBill() {
           break;
       }
       if (looksLikeNotice(text)) return void pasteNotice(text);
+      // A plain yes/no when nothing was asked: acknowledge it instead of a confused answer.
+      if (isYes || isNo) return void reply(text, ["Got it. I'll text you when something needs you."]);
       return void ask(text);
     },
-    [ask, busy, join, pasteNotice, reset, yes, answerName, attachAid, whereAid, openPlaid, nudge, reply, runTriage, skipBank, stopAll, afford],
+    [ask, busy, join, pasteNotice, reset, yes, answerName, attachAid, whereAid, openPlaid, nudge, reply, runTriage, skipBank, stopAll, afford, botSays, chipsFor, fuSpec, push, setChips],
   );
   latest.current.send = send;
 
@@ -1015,6 +1342,10 @@ export function useFirstBill() {
     if (done && live() && stage.current === "alerted") {
       if (!(await step(2200))) return;
       await yes();
+      if (live() && (stage.current as Stage) === "followUp") {
+        if (!(await step(1600))) return;
+        await latest.current.answerFollowUp(0, "YES");
+      }
       if (live() && (stage.current as Stage) === "boost") {
         if (!(await step(2000))) return;
         await latest.current.boostYes();

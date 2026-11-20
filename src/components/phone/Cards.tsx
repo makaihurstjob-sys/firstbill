@@ -49,6 +49,17 @@ export function LinkCard({ title, url, onOpen, brand = "firstbill" }: { title: s
 const TILES = [-1, 0, 1];
 
 /** Plaid's tartan-style mark and wordmark, drawn inline so the page needs no outside image. */
+/** PayPing's mark: a green chat bubble with a white P and a "new message" dot. */
+export function PayPingMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 100" className={className} role="img" aria-label="PayPing">
+      <path d="M50 14C27.4 14 10 29.2 10 48c0 10 4.9 18.9 12.8 25.1-.9 5.8-3.8 10.8-8.6 14.9 8.6.2 16.3-2.6 21.9-6.9 4.4 1.3 9.1 1.9 13.9 1.9 22.6 0 40-15.2 40-35S72.6 14 50 14Z" fill="#0E7A55" />
+      <text x="50" y="49.5" textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize="44" fontWeight="800" fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif">P</text>
+      <circle cx="81" cy="20" r="11.5" fill="#34C759" stroke="#fff" strokeWidth="4.5" />
+    </svg>
+  );
+}
+
 export function PlaidLogo({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 142 48" className={className} role="img" aria-label="Plaid" fill="currentColor">

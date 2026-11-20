@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, AudioLines, ChevronLeft, FileText, Plus, RotateCcw, Video } from "lucide-react";
+import { AudioLines, ChevronLeft, FileText, Plus, RotateCcw, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FirstBillApi, Msg } from "@/hooks/useFirstBill";
-import { BankCard, ClockCard, LinkCard, NoticeAttachment, PlaidLogo, TimelineCard } from "./Cards";
+import { BankCard, ClockCard, LinkCard, NoticeAttachment, PayPingMark, PlaidLogo, TimelineCard } from "./Cards";
 import type { Profile } from "@/lib/firstbill/data";
 import { HoldMenu, type Held } from "./HoldMenu";
 
@@ -41,9 +41,11 @@ function Header({ name, full, onReset, onBack }: { name: string; full?: boolean;
           <span className="-ml-1 rounded-full bg-ph-out px-1.5 text-[12px] font-semibold leading-5 text-ph-out-ink">5</span>
         </button>
         <div className="flex flex-col items-center">
-          <span className={cn("grid h-11 w-11 place-items-center rounded-full text-[15px] font-bold text-white", known ? "bg-[#0b6b52]" : "bg-gradient-to-b from-[#a5abb6] to-[#858b96]")}>
-            {known ? "P" : "#"}
-          </span>
+          {known ? (
+            <PayPingMark className="h-11 w-11" />
+          ) : (
+            <span className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-b from-[#a5abb6] to-[#858b96] text-[15px] font-bold text-white">#</span>
+          )}
           <span className="mt-0.5 text-[12px] text-ph-ink">
             {name} <span className="text-ph-sub">›</span>
           </span>
@@ -89,7 +91,9 @@ function Tapback({ e, me }: { e: string; me: boolean }) {
   );
 }
 
-function Bubble({ from, text, tail, tapback }: { from: "me" | "bot"; text: string; tail: boolean; tapback?: string }) {
+const NFA = "This is not financial advice.";
+
+function Bubble({ from, text, tail, tapback, nfa }: { from: "me" | "bot"; text: string; tail: boolean; tapback?: string; nfa?: boolean }) {
   const me = from === "me";
   return (
     <div
@@ -100,6 +104,7 @@ function Bubble({ from, text, tail, tapback }: { from: "me" | "bot"; text: strin
       )}
     >
       <span>{text}</span>
+      {nfa && <span className="mt-1 block text-[12px] leading-4 opacity-55">{NFA}</span>}
       {tapback && <Tapback e={tapback} me={me} />}
     </div>
   );
@@ -128,7 +133,7 @@ function Row({ m, next, api, onFile, tapback }: { m: Msg; next?: Msg; api: First
   let body: React.ReactNode;
   switch (m.kind) {
     case "text":
-      body = <Bubble from={from} text={m.text} tail={tail} tapback={tapback} />;
+      body = <Bubble from={from} text={m.text} tail={tail} tapback={tapback} nfa={m.nfa} />;
       break;
     case "notice":
       body = <NoticeAttachment title={m.title} servicer={m.servicer} text={m.text} />;
@@ -168,6 +173,13 @@ function Row({ m, next, api, onFile, tapback }: { m: Msg; next?: Msg; api: First
       );
       break;
   }
+  if (m.nfa && m.kind !== "text")
+    body = (
+      <div className="flex max-w-[80%] flex-col items-start">
+        {body}
+        <span className="mt-1 pl-2 text-[11px] text-ph-sub">{NFA}</span>
+      </div>
+    );
   return <div data-msg={m.id} className={cn("flex animate-bubble-in px-3", from === "me" ? "justify-end" : "justify-start", sameNext ? "pb-[4px]" : "pb-3", tapback && "pt-4")}>{body}</div>;
 }
 
@@ -255,7 +267,7 @@ function MessagesList({ full, last, onOpen }: { full?: boolean; last?: { text: s
       <div className="no-scrollbar flex-1 overflow-y-auto">
         <button type="button" onClick={onOpen} className={row}>
           <span className="mt-1 h-2.5 w-2.5 shrink-0" />
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0b6b52] text-[15px] font-bold text-white">P</span>
+          <PayPingMark className="h-11 w-11 shrink-0" />
           <span className="min-w-0 flex-1 border-b border-ph-sep pb-2.5">
             <span className="flex justify-between"><b className="text-[16px] text-ph-ink">PayPing</b><span className="text-[14px] text-ph-sub">now ›</span></span>
             <span className="line-clamp-2 text-[14px] leading-snug text-ph-sub">{last?.text ?? "Text JOIN to start"}</span>
@@ -351,7 +363,18 @@ function useDictation(onText: (t: string) => void) {
   return { supported: Boolean(Ctor), on, toggle, stop };
 }
 
+/** iMessage's send arrow as one filled shape, so nothing extra can show above or below it. */
+function SendArrow() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden fill="currentColor" style={{ display: "block" }}>
+      <path d="M12 3.6c.45 0 .88.18 1.2.5l5.9 5.9a1.55 1.55 0 0 1-2.2 2.2l-3.35-3.35v10.2a1.55 1.55 0 0 1-3.1 0V8.85L7.1 12.2a1.55 1.55 0 0 1-2.2-2.2l5.9-5.9c.32-.32.75-.5 1.2-.5Z" />
+    </svg>
+  );
+}
+
 const HINTS: Record<string, string> = {
+  followUp: "Reply YES or NO",
+  remindAsk: "Reply YES or NO",
   start: "Type JOIN",
   askName: "Type your first name",
   askPay: "Type a day, like 15",
@@ -496,7 +519,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
         >
           {api.msgs.length === 0 && (
             <div className="mx-6 mt-10 text-center text-ph-sub">
-              <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-2xl bg-[#0b6b52] font-display text-2xl font-bold text-white">P</div>
+              <PayPingMark className="mx-auto mb-3 h-16 w-16" />
               <p className="text-[17px] font-semibold text-ph-ink">Text JOIN to start</p>
               <p className="mt-6 text-[11px] text-ph-sub/70">Updated {new Date(__BUILD__).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</p>
               <p className="mt-1 text-[14px] leading-snug">PayPing texts you before a student loan bill goes wrong. No app.</p>
@@ -527,6 +550,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
               <button
                 key={c.label}
                 type="button"
+                data-chip
                 onClick={c.onPick}
                 className={cn(
                   "shrink-0 rounded-full border px-3.5 py-1.5 text-[14px] font-semibold transition-transform active:scale-95",
@@ -577,10 +601,10 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
               <button
                 type="submit"
                 disabled={api.busy}
-                className="mb-[3px] grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full bg-ph-out text-ph-out-ink transition-opacity disabled:opacity-30"
+                className="mb-[3px] grid h-[29px] w-[46px] shrink-0 place-items-center rounded-full bg-ph-out text-ph-out-ink transition-opacity disabled:opacity-30"
                 aria-label="Send"
               >
-                <ArrowUp className="h-[18px] w-[18px]" strokeWidth={3} />
+                <SendArrow />
               </button>
             ) : mic.supported ? (
               <button
@@ -604,8 +628,8 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
                 <AudioLines className="h-[19px] w-[19px]" />
               </button>
             ) : (
-              <button type="submit" disabled className="mb-[3px] grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full bg-ph-out text-ph-out-ink opacity-30" aria-label="Send">
-                <ArrowUp className="h-[18px] w-[18px]" strokeWidth={3} />
+              <button type="submit" disabled className="mb-[3px] grid h-[29px] w-[46px] shrink-0 place-items-center rounded-full bg-ph-out text-ph-out-ink opacity-30" aria-label="Send">
+                <SendArrow />
               </button>
             )}
           </div>
