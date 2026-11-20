@@ -150,7 +150,7 @@ export function useFirstBill() {
   const [balance, setBalance] = useState(450.18);
   const [busy, setBusy] = useState(false);
   const [autoplaying, setAutoplaying] = useState(false);
-  const [contactName, setContactName] = useState(sv?.contactName ?? "34778");
+  const [contactName, setContactName] = useState(sv?.contactName === "34778" ? "PayPing" : sv?.contactName ?? "PayPing");
 
   const run = useRef(0); // bumps on reset so stale sequences stop
   const stage = useRef<Stage>(sv?.stage ?? "start");
@@ -279,7 +279,7 @@ export function useFirstBill() {
     onboard.current = { firstName: "", payday: 18 };
     setBusy(false);
     setLastSource(null);
-    setContactName("34778");
+    setContactName("PayPing");
     setChips(opts?.idle === false ? [] : [startChip]);
   }, [setChips, startChip]);
 
