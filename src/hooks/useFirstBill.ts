@@ -49,6 +49,8 @@ let idSeq = 0;
 const nid = () => `m${++idSeq}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const GAP_DAYS = 2;
+/** ?fast in the link: quicker texting, only for recording the promo video. */
+const FAST = typeof location !== "undefined" && /[?&]fast\b/.test(location.search);
 const signed = (n: number) => (n < 0 ? `-${money(-n)}` : money(n));
 /** The checking breakdown as a plain text message, the way a real text would show it. */
 function breakdown(p: Profile, a: Alert) {
@@ -126,11 +128,11 @@ export function useFirstBill() {
         if (run.current !== myRun) return false;
         const len = item.kind === "text" ? item.text.length : 90;
         setTyping(true);
-        await sleep(reduceMotion() ? 120 : Math.min(2100, 720 + len * 9.5));
+        await sleep(reduceMotion() ? 120 : FAST ? Math.min(1100, 380 + len * 4.5) : Math.min(2100, 720 + len * 9.5));
         if (run.current !== myRun) return false;
         setTyping(false);
         push(item);
-        await sleep(reduceMotion() ? 40 : 520);
+        await sleep(reduceMotion() ? 40 : FAST ? 150 : 520);
       }
       return run.current === myRun;
     },
