@@ -105,14 +105,16 @@ body {
 }
 h1, h2, h3 { text-wrap: balance; }
 
-/* iMessage bubble tails (the classic two-pseudo-element tail) */
+/* iMessage bubble tails */
 .bubble { position: relative; }
-.bubble.tail-me::before, .bubble.tail-bot::before,
-.bubble.tail-me::after, .bubble.tail-bot::after { content: ""; position: absolute; bottom: 0; height: 20px; }
-.bubble.tail-me::before { right: -7px; width: 20px; background: var(--bub-out); border-bottom-left-radius: 16px 14px; z-index: 0; }
-.bubble.tail-me::after { right: -26px; width: 26px; background: var(--ph-bg); border-bottom-left-radius: 10px; z-index: 1; }
-.bubble.tail-bot::before { left: -7px; width: 20px; background: var(--bub-in); border-bottom-right-radius: 16px 14px; z-index: 0; }
-.bubble.tail-bot::after { left: -26px; width: 26px; background: var(--ph-bg); border-bottom-right-radius: 10px; z-index: 1; }
+/* One masked shape per tail (no white cover-up layer), so no seam or stray line can show through. */
+.bubble.tail-me::before, .bubble.tail-bot::before {
+  content: ""; position: absolute; bottom: 0; width: 17px; height: 21px; z-index: 0; pointer-events: none;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 21'><path d='M0 0C0 9 3 16 16.5 20.6 9.5 21.4 4 20.2 0 17.5Z'/></svg>") no-repeat 0 0 / 100% 100%;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 21'><path d='M0 0C0 9 3 16 16.5 20.6 9.5 21.4 4 20.2 0 17.5Z'/></svg>") no-repeat 0 0 / 100% 100%;
+}
+.bubble.tail-me::before { right: -6px; background: var(--bub-out); }
+.bubble.tail-bot::before { left: -6px; background: var(--bub-in); transform: scaleX(-1); }
 .bubble > *:not(.tb) { position: relative; z-index: 2; }
 
 /* Feels like an app: no zoom, no stray selection or callouts. Message text and the draft stay selectable. */
