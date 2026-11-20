@@ -80,19 +80,23 @@ export function triage(cash: number, bills: TriageBill[]): TriagePlan {
 /** The reply, as a few short texts. */
 export function triageTexts(p: TriagePlan): string[] {
   const out: string[] = [];
-  if (p.pay.length) out.push(`Do this today: pay ${p.pay.map((x) => `${x.bill.label} ${usd(x.amount)}`).join(" and ")}.`);
-  else out.push("Do this today: don't pay a bill yet. Keep your cash for food and essentials.");
+  if (p.pay.length) out.push(`Here's what I'd pay first: ${p.pay.map((x) => `${x.bill.label} ${usd(x.amount)}`).join(" and ")}.`);
+  else out.push("I'd hold off on bills for now and keep your cash for food and essentials.");
   const keep: string[] = [];
-  if (p.reserve) keep.push(`Keep ${usd(p.reserve)} for food`);
+  if (p.reserve) keep.push(`keep ${usd(p.reserve)} for food`);
   if (p.partial) keep.push(`put ${usd(p.partial.amount)} toward ${p.partial.bill.label} and ask for a payment plan`);
-  if (keep.length) out.push(`${keep.join(". Then ")}.`);
+  if (keep.length) out.push(`Then ${keep.join(", and ")}.`);
   for (const h of p.hold) {
-    if (h.kind === "federal") out.push(`Hold the ${usd(h.amount)} student loan. Federal loans don't hit your credit until 90 days late. Ask your servicer for a short forbearance or a later due date.`);
+    if (h.kind === "federal") out.push(`The ${usd(h.amount)} student loan can wait. Federal loans aren't reported until 90 days late.`);
     else if (h.kind === "card" || h.kind === "private") out.push(`The ${usd(h.amount)} ${h.label} can wait a few days, but not 30. That's when it's reported.`);
-    else out.push(`Push the ${usd(h.amount)} ${h.label} to payday and call them first.`);
+    else out.push(`The ${usd(h.amount)} ${h.label} could wait until payday if you call them first.`);
   }
-  out.push("Why: lights, food and housing first. Cards report at 30 days late, federal loans at 90.");
-  if (p.scriptFor) out.push(`Reply YES and I'll write the message to your ${p.scriptFor.kind === "rent" ? "landlord" : p.scriptFor.kind === "federal" ? "loan servicer" : p.scriptFor.kind === "card" ? "card company" : p.scriptFor.label + " company"}.`);
+  out.push("Lights, food and housing come first. Cards report at 30 days late, federal loans at 90. Your call though.");
+  if (p.scriptFor) {
+    const who = p.scriptFor.kind === "rent" ? "landlord" : p.scriptFor.kind === "federal" ? "loan servicer" : p.scriptFor.kind === "card" ? "card company" : `${p.scriptFor.label} company`;
+    const ask = p.scriptFor.kind === "rent" ? "asking for a payment plan" : p.scriptFor.kind === "federal" ? "asking for a later due date or a short pause" : "asking for a few more days";
+    out.push(`Want me to write your ${who} a note ${ask}?`);
+  }
   return out;
 }
 

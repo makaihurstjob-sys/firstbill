@@ -126,11 +126,11 @@ export function useFirstBill() {
         if (run.current !== myRun) return false;
         const len = item.kind === "text" ? item.text.length : 90;
         setTyping(true);
-        await sleep(reduceMotion() ? 120 : Math.min(1500, 520 + len * 7));
+        await sleep(reduceMotion() ? 120 : Math.min(2100, 720 + len * 9.5));
         if (run.current !== myRun) return false;
         setTyping(false);
         push(item);
-        await sleep(reduceMotion() ? 40 : 160);
+        await sleep(reduceMotion() ? 40 : 520);
       }
       return run.current === myRun;
     },
@@ -341,9 +341,8 @@ export function useFirstBill() {
             ? `With your other bills, you'd be ${money(-a.low)} short on ${fmtShort(a.lowDate)}. That's an overdraft fee, often $25 to $35.`
             : `You'd be down to ${money(a.low)} on ${fmtShort(a.lowDate)}. No cushion.`,
       },
-      { kind: "text", from: "bot", text: `Fix: move your due date to the ${ordinal(a.newDue.getDate())}, ${daysBetween(p.payday, a.newDue)} days after payday. Same payment. Ask now, it can take a cycle.` },
-      { kind: "text", from: "bot", text: `Costs $0. No credit hit.` },
-      { kind: "text", from: "bot", text: `Reply YES and I'll write the request. You send it.` },
+      { kind: "text", from: "bot", text: `One idea: move your due date to the ${ordinal(a.newDue.getDate())}, ${daysBetween(p.payday, a.newDue)} days after payday. Same payment, costs $0, no credit hit.` },
+      { kind: "text", from: "bot", text: `Want me to write the request to ${p.servicer.split(" ")[0]}? You'd send it.` },
     );
     const ok = await botSays(items, myRun);
     if (!ok) return;
@@ -424,7 +423,7 @@ export function useFirstBill() {
     stage.current = "drafted";
     const ok = await botSays(
       [
-        { kind: "text", from: "bot", text: `Here it is. Paste it in ${p.servicer.split(" ")[0]}'s messages or read it on a call.` },
+        { kind: "text", from: "bot", text: `Here it is. Tap to copy, then paste it in ${p.servicer.split(" ")[0]}'s messages or read it on a call.` },
         { kind: "draft", from: "bot", to: p.servicer, text: dueDateDraft(p, a) },
         { kind: "text", from: "bot", text: `I'll check on ${fmtShort(addDays(p.firstPull, -3))} that they said yes.` },
       ],
@@ -447,35 +446,38 @@ export function useFirstBill() {
     stage.current = "boost";
     push({ kind: "divider", text: `${fmtShort(p.payday)} · Payday`, sub: "FirstBill texts first" });
     const b = boostMath(p, a.payment, BOOST);
+    const b50 = boostMath(p, a.payment, 50);
     const left = afterPayday(p, a.payment);
-    const opener = `Payday! Want to pay your loan off sooner?`;
+    const opener = `Your paycheck landed. Want to pay your loan off sooner?`;
     setBanner({ title: "FirstBill", body: opener });
     await sleep(reduceMotion() ? 300 : 1800);
     if (run.current !== myRun) return;
     setBanner(null);
     const ok = await botSays(
       [
-        { kind: "text", from: "bot", text: `Payday! +${money(p.paycheck).replace(".00", "")} landed. After this month's bills you still have ${money(left)}.` },
-        { kind: "text", from: "bot", text: `Put ${money(BOOST).replace(".00", "")} extra on your loan each month? You'd save about ${money(b.saved).replace(/\.\d\d$/, "")} in interest and be done ${b.sooner} months sooner.` },
+        { kind: "text", from: "bot", text: `I see your paycheck landed: +${money(p.paycheck).replace(".00", "")}. After this month's bills you'd still have ${money(left)}.` },
+        { kind: "text", from: "bot", text: `Want to put ${money(BOOST).replace(".00", "")} extra toward your loan each month? At ${p.loans[0].rate}%, that saves about ${money(b.saved).replace(/\.\d\d$/, "")} in interest and you'd be done ${b.sooner} months sooner.` },
+        { kind: "text", from: "bot", text: `$50 a month would save about ${money(b50.saved).replace(/\.\d\d$/, "")} and finish ${b50.sooner} months sooner. Which feels doable?` },
       ],
       myRun,
     );
     if (!ok) return;
     setChips([
-      { label: `YES, ${money(BOOST).replace(".00", "")} a month`, primary: true, onPick: () => void latest.current.boostYes() },
+      { label: `${money(BOOST).replace(".00", "")} a month`, primary: true, onPick: () => void latest.current.boostYes(BOOST) },
+      { label: "$50 a month", onPick: () => void latest.current.boostYes(50) },
       { label: "Not now", onPick: () => void latest.current.boostNo() },
     ]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botSays, push]);
 
-  const boostYes = useCallback(async () => {
+  const boostYes = useCallback(async (amt: number = BOOST) => {
     const myRun = run.current;
     if (stage.current !== "boost") return;
     stage.current = "boosted";
     setChips([]);
-    push({ kind: "text", from: "me", text: "YES" });
+    push({ kind: "text", from: "me", text: amt === BOOST ? "YES" : `$${amt} a month` });
     const ok = await botSays(
-      [{ kind: "text", from: "bot", text: `Done. Every payday I'll remind you, only if your bank can spare it. Tip: tell ${profile.current.servicer.split(" ")[0]} the extra goes to principal.` }],
+      [{ kind: "text", from: "bot", text: `Nice. Want me to remind you each payday? I'll only ask when your bank can spare $${amt}. Tip: tell ${profile.current.servicer.split(" ")[0]} the extra goes to principal.` }],
       myRun,
     );
     if (ok) setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }, { label: "Start over", onPick: () => void latest.current.reset() }]);
@@ -801,7 +803,7 @@ export function useFirstBill() {
       // Carrier keywords always work.
       if (/^(stop|unsubscribe|cancel|quit|end|stopall)$/i.test(text)) return void stopAll(text);
       if (/^(start over|reset|restart)$/i.test(text)) return void reset();
-      if (/^(join|start|unstop)\b/i.test(text) && (st === "start" || st === "stopped")) return void join();
+      if (/^(join|start|unstop)\b/i.test(text) && (st === "start" || st === "stopped" || ((st === "triageAsk" || st === "triageDone") && !onboard.current.firstName))) return void join();
       if (/^(help|info|menu|commands|\?+|what can you do\??|what do you do\??|what is this\??|who are you\??|how does this work\??)$/i.test(text))
         return void reply(text, [
           "I'm FirstBill. I text you before a student loan bill or an overdraft hits, with one fix and what it costs. You say YES, I write the message, you send it. I never move money.",
@@ -845,7 +847,8 @@ export function useFirstBill() {
           if (isNo) return void reply(text, ["No problem. Reply YES anytime and I'll write it."]);
           break;
         case "boost":
-          if (isYes) return void latest.current.boostYes();
+          if (/50/.test(text)) return void latest.current.boostYes(50);
+          if (isYes || /25/.test(text)) return void latest.current.boostYes();
           if (isNo) return void latest.current.boostNo();
           break;
       }
