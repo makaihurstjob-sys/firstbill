@@ -5,14 +5,17 @@ import { useEffect, useState } from "react";
 
 /** Like iMessage: when the keyboard opens, the header stays put and only the thread shrinks.
     iOS normally slides the whole page up, so we pin the app to the visible area instead. */
-function useVisibleArea() {
+function useVisibleArea(enabled: boolean) {
   const [box, setBox] = useState<{ top: number; height: number } | null>(null);
   useEffect(() => {
     const vv = window.visualViewport;
-    if (!vv) return;
+    const touch = window.matchMedia?.("(pointer: coarse)").matches;
+    if (!vv || !touch || !enabled) return;
+    document.documentElement.classList.add("phone-lock");
     const apply = () => {
+      if (Math.abs((vv.scale || 1) - 1) > 0.02) return setBox(null);
       setBox({ top: vv.offsetTop, height: vv.height });
-      if (window.scrollY) window.scrollTo(0, 0);
+      if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
     };
     apply();
     vv.addEventListener("resize", apply);
@@ -23,7 +26,7 @@ function useVisibleArea() {
       vv.removeEventListener("scroll", apply);
       window.removeEventListener("scroll", apply);
     };
-  }, []);
+  }, [enabled]);
   return box;
 }
 
@@ -36,7 +39,7 @@ function isPhoneOnly() {
 
 export default function App() {
   const api = useFirstBill();
-  const box = useVisibleArea();
+  const box = useVisibleArea(isPhoneOnly());
   if (isPhoneOnly()) {
     return (
       <div className="fixed inset-x-0 top-0 h-full bg-ph-bg" style={box ? { top: box.top, height: box.height } : undefined}>

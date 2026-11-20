@@ -311,7 +311,7 @@ export function useFirstBill() {
     push({ kind: "divider", lead: later.toLocaleDateString("en-US", { weekday: "long" }), text: "9:41 AM", sub: `${GAP_DAYS} days later` });
     stage.current = "alerted";
     const a = alert.current;
-    const opener = `Heads up, ${p.firstName}: your student loan grace period ends in ${a.graceDays} days.`;
+    const opener = `Heads up, ${p.firstName}: your student loan payments start soon. Your grace period ends ${fmtShort(p.graceEnds)}, ${a.graceDays} days from now.`;
     setBanner({ title: "Ping", body: `${opener} Your first payment could overdraft you.` });
     await sleep(reduceMotion() ? 300 : 2300);
     if (run.current !== myRun) return;
@@ -322,7 +322,7 @@ export function useFirstBill() {
       {
         kind: "text",
         from: "bot",
-        text: `${money(a.payment)} comes out ${firstPullStr}. That leaves ${money(a.afterPull)} until payday.`,
+        text: `Your first loan payment is ${money(a.payment)}. ${p.servicer.split(" ")[0]} will auto-pull it from checking on ${firstPullStr}. That leaves you ${money(a.afterPull)} until payday on ${fmtShort(p.payday)}.`,
       },
       { kind: "text", from: "bot", text: breakdown(p, a) },
     ];
@@ -340,11 +340,11 @@ export function useFirstBill() {
         from: "bot",
         text:
           a.status === "overdraft"
-            ? `With your other bills, you'd be ${money(-a.low)} short on ${fmtShort(a.lowDate)}. That's an overdraft fee, often $25 to $35.`
+            ? `Then your phone bill and car insurance come out. You'd be ${money(-a.low)} short on ${fmtShort(a.lowDate)}, which could mean an overdraft fee, often $25 to $35.`
             : `You'd be down to ${money(a.low)} on ${fmtShort(a.lowDate)}. No cushion.`,
       },
-      { kind: "text", from: "bot", text: `One idea: move your due date to the ${ordinal(a.newDue.getDate())}, ${daysBetween(p.payday, a.newDue)} days after payday. Same payment, costs $0, no credit hit.` },
-      { kind: "text", from: "bot", text: `Want me to write the request to ${p.servicer.split(" ")[0]}? You'd send it.` },
+      { kind: "text", from: "bot", text: `One idea: ask ${p.servicer.split(" ")[0]} to move your due date to the ${ordinal(a.newDue.getDate())}, ${daysBetween(p.payday, a.newDue)} days after payday. Same ${money(a.payment)} payment, $0 to change, no credit hit.` },
+      { kind: "text", from: "bot", text: `Want me to write that request for you? You'd send it to ${p.servicer.split(" ")[0]} yourself.` },
     );
     const ok = await botSays(items, myRun);
     if (!ok) return;
