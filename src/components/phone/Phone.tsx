@@ -91,9 +91,7 @@ function Tapback({ e, me }: { e: string; me: boolean }) {
   );
 }
 
-const NFA = "This is not financial advice.";
-
-function Bubble({ from, text, tail, tapback, nfa }: { from: "me" | "bot"; text: string; tail: boolean; tapback?: string; nfa?: boolean }) {
+function Bubble({ from, text, tail, tapback }: { from: "me" | "bot"; text: string; tail: boolean; tapback?: string }) {
   const me = from === "me";
   return (
     <div
@@ -104,7 +102,6 @@ function Bubble({ from, text, tail, tapback, nfa }: { from: "me" | "bot"; text: 
       )}
     >
       <span>{text}</span>
-      {nfa && <span className="mt-1 block text-[12px] leading-4 opacity-55">{NFA}</span>}
       {tapback && <Tapback e={tapback} me={me} />}
     </div>
   );
@@ -133,7 +130,7 @@ function Row({ m, next, api, onFile, tapback }: { m: Msg; next?: Msg; api: First
   let body: React.ReactNode;
   switch (m.kind) {
     case "text":
-      body = <Bubble from={from} text={m.text} tail={tail} tapback={tapback} nfa={m.nfa} />;
+      body = <Bubble from={from} text={m.text} tail={tail} tapback={tapback} />;
       break;
     case "notice":
       body = <NoticeAttachment title={m.title} servicer={m.servicer} text={m.text} />;
@@ -173,13 +170,6 @@ function Row({ m, next, api, onFile, tapback }: { m: Msg; next?: Msg; api: First
       );
       break;
   }
-  if (m.nfa && m.kind !== "text")
-    body = (
-      <div className="flex max-w-[80%] flex-col items-start">
-        {body}
-        <span className="mt-1 pl-2 text-[11px] text-ph-sub">{NFA}</span>
-      </div>
-    );
   return <div data-msg={m.id} className={cn("flex animate-bubble-in px-3", from === "me" ? "justify-end" : "justify-start", sameNext ? "pb-[4px]" : "pb-3", tapback && "pt-4")}>{body}</div>;
 }
 
@@ -481,7 +471,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api.msgs.length, api.typing, api.chips.length]);
   const [listOpen, setListOpen] = useState(false);
-  const lastBotText = [...api.msgs].reverse().find((m) => m.kind === "text" && m.from === "bot") as { text: string } | undefined;
+  const lastBotText = [...api.msgs].reverse().find((m) => m.kind === "text" && m.from === "bot" && !m.disc) as { text: string } | undefined;
 
   const submit = () => {
     if (!draft.trim()) return;
@@ -553,6 +543,9 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
           </div>
         )}
 
+        {api.chips.length > 0 && (
+          <p className="px-4 pt-1.5 text-[11px] leading-[14px] text-ph-sub">(Simulated replies. You can also type your own.)</p>
+        )}
         {api.chips.length > 0 && (
           <div className="no-scrollbar flex gap-2 overflow-x-auto px-3 pb-2 pt-1">
             {api.chips.map((c) => (

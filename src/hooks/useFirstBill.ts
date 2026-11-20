@@ -37,8 +37,9 @@ export type MsgBody =
   | { kind: "draft"; from: "bot"; to: string; text: string }
   | { kind: "file"; from: "me"; name: string; size: string }
   | { kind: "divider"; text: string; lead?: string; sub?: string };
-/** nfa: this bubble ends a reply, so it carries the "This is not financial advice." line. */
-type Out = MsgBody & { nfa?: boolean };
+/** disc: the "This is not financial advice." text PayPing sends as its own message after every reply. */
+type Out = MsgBody & { nfa?: boolean; disc?: boolean };
+export const DISCLAIMER = "This is not financial advice.";
 export type Msg = Out & { id: string };
 
 export type Chip = { label: string; onPick: () => void; primary?: boolean };
@@ -208,7 +209,7 @@ export function useFirstBill() {
     const list = (Array.isArray(m) ? m : [m]).map((x) => ({ ...x, id: nid() }) as Msg);
     setMsgs((prev) => [...prev, ...list]);
     for (const x of list) {
-      if (x.kind === "text") turns.current.push({ role: x.from === "me" ? "user" : "assistant", content: x.text });
+      if (x.kind === "text" && !x.disc) turns.current.push({ role: x.from === "me" ? "user" : "assistant", content: x.text });
     }
   }, []);
 
@@ -222,8 +223,19 @@ export function useFirstBill() {
         await sleep(reduceMotion() ? 120 : FAST ? Math.min(1100, 380 + len * 4.5) : Math.min(2100, 720 + len * 9.5));
         if (run.current !== myRun) return false;
         setTyping(false);
-        push(item === items[items.length - 1] && item.kind !== "divider" && item.from === "bot" ? { ...item, nfa: true } : item);
+        push(item);
         await sleep(reduceMotion() ? 40 : FAST ? 150 : 520);
+      }
+      if (run.current !== myRun) return false;
+      const last = items[items.length - 1];
+      if (last && last.kind !== "divider" && last.from === "bot") {
+        // Every reply ends with the disclaimer as its own short text.
+        setTyping(true);
+        await sleep(reduceMotion() ? 80 : FAST ? 300 : 600);
+        if (run.current !== myRun) return false;
+        setTyping(false);
+        push({ kind: "text", from: "bot", text: DISCLAIMER, disc: true });
+        await sleep(reduceMotion() ? 40 : FAST ? 120 : 300);
       }
       return run.current === myRun;
     },
@@ -826,12 +838,15 @@ export function useFirstBill() {
       setTyping(false);
       const nd0 = ["start", "askName", "askPay", "askLoans", "askBank", "noBank"].includes(stage.current) ? latest.current.nudge?.() : null;
       const nd = nd0 && !answer.includes(nd0) ? nd0 : null;
-      push({ kind: "text", from: "bot", text: answer, nfa: !nd });
+      push({ kind: "text", from: "bot", text: answer });
       if (nd) {
         await sleep(reduceMotion() ? 60 : 500);
         if (run.current !== myRun) return;
-        push({ kind: "text", from: "bot", text: nd, nfa: true });
+        push({ kind: "text", from: "bot", text: nd });
       }
+      await sleep(reduceMotion() ? 60 : 450);
+      if (run.current !== myRun) return;
+      push({ kind: "text", from: "bot", text: DISCLAIMER, disc: true });
       if (/^stop\b/i.test(q)) {
         setChips([{ label: "JOIN", primary: true, onPick: () => { latest.current.reset(); void latest.current.join(); } }]);
         return;

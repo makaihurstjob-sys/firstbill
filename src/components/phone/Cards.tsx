@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, Check, Clock, Copy, FileText, GraduationCap, Landmark, Link2 } from "lucide-react";
+import { AlertTriangle, Check, Clock, Copy, FileText, GraduationCap, Landmark } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtShort, fromISO, money, type Alert, type Profile } from "@/lib/firstbill/data";
 
@@ -17,30 +17,28 @@ export function LinkCard({ title, url, onOpen, brand = "firstbill" }: { title: s
     <button
       type="button"
       onClick={onOpen}
-      className="w-[75%] max-w-[270px] overflow-hidden rounded-[18px] bg-ph-in text-left text-ph-in-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ph-out"
+      className="w-[72%] min-w-[230px] max-w-[270px] shrink-0 overflow-hidden rounded-[18px] bg-ph-in text-left text-ph-in-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ph-out"
     >
       {brand === "studentaid" ? (
-        <div className="flex h-[118px] flex-col items-center justify-center gap-1.5 bg-[#12355b] text-white">
+        <div className="flex aspect-[1.91/1] w-full flex-col items-center justify-center gap-1.5 bg-[#12355b] text-white">
           <GraduationCap className="h-9 w-9 opacity-90" />
           <span className="text-[15px] font-bold tracking-tight">Federal Student Aid</span>
           <span className="text-[11px] opacity-75">My Aid · Download My Aid Data</span>
         </div>
       ) : brand === "plaid" ? (
-        <div className="flex h-[118px] flex-col items-center justify-center gap-2 border-b border-ph-sep bg-white text-black">
+        <div className="flex aspect-[1.91/1] w-full flex-col items-center justify-center gap-2 bg-[#f2f3f5] text-black">
           <PlaidLogo className="h-8" />
           <span className="text-[12px] font-medium text-[#555]">Read-only. Can't move money.</span>
         </div>
       ) : (
-        <div className="flex h-24 items-center justify-center gap-2 bg-[#0b6b52] text-white">
+        <div className="flex aspect-[1.91/1] w-full items-center justify-center gap-2 bg-[#0E7A55] text-white">
           <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 font-display text-lg font-bold">P</span>
           <span className="font-display text-xl font-bold tracking-tight">PayPing</span>
         </div>
       )}
-      <div className="px-3 py-2">
-        <div className="text-[15px] font-semibold leading-snug">{title}</div>
-        <div className="flex items-center gap-1 text-[13px] text-ph-sub">
-          <Link2 className="h-3 w-3" /> {url}
-        </div>
+      <div className="px-3 pb-2.5 pt-2">
+        <div className="line-clamp-2 text-[15px] font-semibold leading-[19px]">{title}</div>
+        <div className="mt-0.5 text-[13px] leading-4 text-ph-sub">{url}</div>
       </div>
     </button>
   );
