@@ -36,7 +36,7 @@ export default {
         ios: ["-apple-system", "BlinkMacSystemFont", '"SF Pro Text"', "Inter", "system-ui", "sans-serif"],
       },
       keyframes: {
-        "bubble-in": { from: { opacity: "0", transform: "translateY(6px) scale(0.98)" }, to: { opacity: "1", transform: "none" } },
+        "bubble-in": { from: { opacity: "0", transform: "translateY(6px)" }, to: { opacity: "1", transform: "translateY(0)" } },
         "banner-in": { from: { opacity: "0", transform: "translateY(-120%)" }, to: { opacity: "1", transform: "none" } },
         dot: { "0%, 60%, 100%": { opacity: "0.35", transform: "translateY(0)" }, "30%": { opacity: "1", transform: "translateY(-2px)" } },
       },

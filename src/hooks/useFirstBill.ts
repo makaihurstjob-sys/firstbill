@@ -61,6 +61,16 @@ function breakdown(p: Profile, a: Alert) {
   lines.push(`${fmtShort(p.payday)} Payday +${m0(p.paycheck)}`);
   return lines.join("\n");
 }
+const usd0 = (n: number) => money(n).replace(/\.00$/, "");
+/** One short line per bill, each sent as its own text so it's easy to read. */
+function breakdownLines(p: Profile, a: Alert) {
+  const name = (l: string) => l.replace(/first loan payment|student loan.*/i, "Loan payment").replace(/ bill$/i, "");
+  const m0 = (n: number) => money(n).replace(".00", "");
+  return [
+    ...a.rows.map((r) => `${fmtShort(r.date)} · ${name(r.label)} ${m0(r.amount)} → ${r.after < 0 ? `${signed(r.after)} ⚠️` : `${money(r.after)} left`}`),
+    `${fmtShort(p.payday)} · Payday +${m0(p.paycheck)}`,
+  ];
+}
 const reduceMotion = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 export interface SignupInfo {
@@ -159,6 +169,7 @@ export function useFirstBill() {
     decodeCtl.current = null;
     stage.current = "start";
     decode.current = null;
+    plan.current = null;
     turns.current = [];
     skipLive.current = null;
     setMsgs([]);
@@ -322,9 +333,10 @@ export function useFirstBill() {
       {
         kind: "text",
         from: "bot",
-        text: `Your first loan payment is ${money(a.payment)}. ${p.servicer.split(" ")[0]} will auto-pull it from checking on ${firstPullStr}. That leaves you ${money(a.afterPull)} until payday on ${fmtShort(p.payday)}.`,
+        text: `Your first loan payment is ${money(a.payment)}. ${p.servicer.split(" ")[0]} will auto-pull it from checking on ${firstPullStr}.`,
       },
-      { kind: "text", from: "bot", text: breakdown(p, a) },
+      { kind: "text", from: "bot", text: `You have ${money(p.balance)} in checking today. Here's what's coming before payday:` },
+      ...breakdownLines(p, a).map((t) => ({ kind: "text", from: "bot", text: t }) as MsgBody),
     ];
     if (a.status === "ok") {
       items.push({ kind: "text", from: "bot", text: `You're covered. Lowest point: ${money(a.low)}. I'll keep watching.` });
@@ -340,7 +352,7 @@ export function useFirstBill() {
         from: "bot",
         text:
           a.status === "overdraft"
-            ? `Then your phone bill and car insurance come out. You'd be ${money(-a.low)} short on ${fmtShort(a.lowDate)}, which could mean an overdraft fee, often $25 to $35.`
+            ? `So on ${fmtShort(a.lowDate)} you'd be ${money(-a.low)} short. That could mean an overdraft fee, often $25 to $35.`
             : `You'd be down to ${money(a.low)} on ${fmtShort(a.lowDate)}. No cushion.`,
       },
       { kind: "text", from: "bot", text: `One idea: ask ${p.servicer.split(" ")[0]} to move your due date to the ${ordinal(a.newDue.getDate())}, ${daysBetween(p.payday, a.newDue)} days after payday. Same ${money(a.payment)} payment, $0 to change, no credit hit.` },
@@ -629,6 +641,10 @@ export function useFirstBill() {
     if (d && (stage.current === "noticeAsk" || stage.current === "noticeDrafted")) {
       return `They forwarded a ${d.loan_kind} loan notice from ${d.servicer}. Decoded: ${d.what_it_means} Amount to catch up: ${d.amount_to_catch_up ?? "unknown"}. Days late: ${d.days_late ?? "unknown"}. Suggested action: ${d.next_action} Cost: ${d.cost_of_action}. Checking balance ${money(p.balance)}, payday ${fmtShort(p.payday)}.`;
     }
+    const pl = plan.current;
+    if (pl && (stage.current === "triageAsk" || stage.current === "triageDone")) {
+      return `They texted their cash and bills. Cash ${money(pl.cash)}. Plan: pay ${pl.pay.map((x) => `${x.bill.label} ${money(x.amount)}`).join(", ") || "nothing yet"}; keep ${money(pl.reserve)} for food; ${pl.partial ? `${money(pl.partial.amount)} toward ${pl.partial.bill.label} (still owes ${money(pl.partial.bill.amount - pl.partial.amount)})` : ""}; waiting: ${pl.hold.map((h) => `${h.label} ${money(h.amount)}`).join(", ") || "none"}. Left over after the plan: ${money(pl.left)}. Payday the ${ordinal(onboard.current.payday || 18)}.`;
+    }
     return `${p.firstName}, new grad. ${p.loans.length} federal Direct loans, ${money(totalBalance(p))} at ${p.loans[0].rate}% with ${p.servicer}. Grace period ends ${fmtShort(p.graceEnds)} (${a.graceDays} days). First payment ${money(a.payment)} autopays ${fmtShort(p.firstPull)}. Checking ${money(p.balance)}; after the payment ${money(a.afterPull)}; bills before payday: ${p.upcoming.map((u) => `${u.label} ${money(u.amount)} on ${fmtShort(u.date)}`).join(", ")}; lowest point ${money(a.low)} on ${fmtShort(a.lowDate)}. Payday ${fmtShort(p.payday)} (${money(p.paycheck)}). Suggested fix: move due date to the ${ordinal(a.newDue.getDate())}; no fee; interest about ${money(a.daily)} a day either way.`;
   }, []);
 
@@ -734,6 +750,33 @@ export function useFirstBill() {
     if (run.current === myRun) setChips([{ label: "Try that example", primary: true, onPick: () => void latest.current.send("I have $180. Rent 550, card 40, loan 310, electric 60") }]);
   }, [botSays, push, setChips]);
 
+  /** "Can I afford it?" from the numbers we have: their Pay This First plan, or their linked checking. */
+  const afford = useCallback((x: number, said: string): string[] => {
+    const money = (n: number) => usd0(n);
+    const what = (said.match(/(?:afford|buy|get|spend on|for)\s+(?:a |an |some |new |the )*([a-z][a-z ]{1,24}?)(?:\s+for|\s+at|\s*\$|\?|$)/i)?.[1] ?? "that").trim();
+    const payday = `the ${ordinal(onboard.current.payday || profile.current.payday.getDate())}`;
+    const pl = plan.current;
+    if (pl) {
+      const owed = (pl.partial ? pl.partial.bill.amount - pl.partial.amount : 0) + pl.hold.reduce((t, h) => t + h.amount, 0);
+      if (x <= pl.left) return [`Yes. After your plan you'd still have ${money(pl.left)}, so ${money(x)} on ${what} leaves ${money(pl.left - x)}.`];
+      const from = pl.reserve ? `your ${money(pl.reserve)} food money` : "money for your bills";
+      return [
+        `I'd wait on ${what}. After your plan you have ${money(pl.left)} left${owed ? `, and you still owe ${money(owed)}${pl.partial ? ` (${pl.partial.bill.label} included)` : ""}` : ""}.`,
+        `${money(x)} would have to come out of ${from}.`,
+        `Can it wait until payday on ${payday}? I can remind you then.`,
+      ];
+    }
+    const signedUp = !["start", "stopped", "askName", "askPay", "askLoans", "askBank", "noBank"].includes(stage.current);
+    if (signedUp) {
+      const a = alert.current;
+      const low = a.low - x;
+      if (a.low < 0) return [`I'd wait on ${what}. You're already on track to be ${money(-a.low)} short on ${fmtShort(a.lowDate)}.`, `${money(x)} more makes it ${money(-low)} short. After payday on ${fmtShort(profile.current.payday)} you'd be fine.`];
+      if (low >= 50) return [`Yes. Even after ${money(x)}, your lowest point before payday is ${money(low)}.`];
+      return [`It's tight. ${money(x)} would leave you ${money(low)} at your lowest before payday on ${fmtShort(profile.current.payday)}.`, "Could it wait a few days?"];
+    }
+    return [`Happy to check. Text me your cash and bills, like: I have $180. Rent 550, card 40. Then ask again about the ${money(x)}.`];
+  }, []);
+
   /** What to say to bring someone back to the step they're on. */
   const nudge = useCallback((): string | null => {
     switch (stage.current) {
@@ -814,6 +857,11 @@ export function useFirstBill() {
         ]);
       if (gibberish) return void reply(text, ["Sorry, I didn't catch that.", nudge() ?? "Text HELP to see what I can do."]);
 
+      // "Can I afford $30 shoes?": answered from their own numbers, in code.
+      const amt = text.match(/\$\s?(\d[\d,]*(?:\.\d{1,2})?)|(\d[\d,]*(?:\.\d{1,2})?)\s?(?:dollars|bucks)/i);
+      if (amt && /afford|can i (buy|get|spend|pay)|should i (buy|get|spend)|is it ok|okay to (buy|spend)|treat myself/i.test(text) && st !== "askName" && st !== "askPay")
+        return void reply(text, afford(Number((amt[1] ?? amt[2]).replace(/,/g, "")), text));
+
       // Pay This First works anytime outside the first two setup questions.
       const tri = st !== "askName" && st !== "askPay" ? parseTriage(text) : null;
       if (tri) return void runTriage(text, tri);
@@ -857,7 +905,7 @@ export function useFirstBill() {
       if (looksLikeNotice(text)) return void pasteNotice(text);
       return void ask(text);
     },
-    [ask, busy, join, pasteNotice, reset, yes, answerName, attachAid, whereAid, openPlaid, nudge, reply, runTriage, skipBank, stopAll],
+    [ask, busy, join, pasteNotice, reset, yes, answerName, attachAid, whereAid, openPlaid, nudge, reply, runTriage, skipBank, stopAll, afford],
   );
   latest.current.send = send;
 

@@ -168,7 +168,7 @@ function Row({ m, next, api, onFile, tapback }: { m: Msg; next?: Msg; api: First
       );
       break;
   }
-  return <div data-msg={m.id} className={cn("flex animate-bubble-in px-3", from === "me" ? "justify-end" : "justify-start", sameNext ? "pb-[2px]" : "pb-2", tapback && "pt-4")}>{body}</div>;
+  return <div data-msg={m.id} className={cn("flex animate-bubble-in px-3", from === "me" ? "justify-end" : "justify-start", sameNext ? "pb-[4px]" : "pb-3", tapback && "pt-4")}>{body}</div>;
 }
 
 /** The drafted message is just a text, like iMessage. Tap it to copy. */
