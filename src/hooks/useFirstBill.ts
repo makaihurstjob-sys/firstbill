@@ -29,11 +29,12 @@ import {
 export type MsgBody =
   | { kind: "text"; from: "bot" | "me"; text: string }
   | { kind: "notice"; from: "me"; title: string; servicer: string; text: string }
-  | { kind: "link"; from: "bot"; title: string; url: string }
+  | { kind: "link"; from: "bot"; title: string; url: string; action?: "plaid" }
   | { kind: "timeline"; from: "bot"; alert: Alert; profile: Profile }
   | { kind: "clock"; from: "bot"; daysLeft: number; lateToday: number; threshold: number; hitDate: string; federal: boolean }
   | { kind: "bank"; from: "bot"; amount: number; balance: number; last4: string; payday: string }
   | { kind: "draft"; from: "bot"; to: string; text: string }
+  | { kind: "file"; from: "me"; name: string; size: string }
   | { kind: "divider"; text: string; sub?: string };
 export type Msg = MsgBody & { id: string };
 
@@ -41,7 +42,7 @@ export type Chip = { label: string; onPick: () => void; primary?: boolean };
 export type Banner = { title: string; body: string } | null;
 export type Source = "claude" | "backup" | null;
 
-type Stage = "start" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
+type Stage = "start" | "askName" | "askPay" | "askLoans" | "askBank" | "joined" | "signedUp" | "alerted" | "covered" | "drafted" | "boost" | "boosted" | "noticeAsk" | "noticeDrafted";
 
 let idSeq = 0;
 const nid = () => `m${++idSeq}`;
@@ -59,7 +60,7 @@ export function useFirstBill() {
   const [typing, setTyping] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const latest = useRef<Record<string, (...args: any[]) => any>>({});
-  const startChip: Chip = useMemo(() => ({ label: "Text JOIN", primary: true, onPick: () => void latest.current.join() }), []);
+  const startChip: Chip = useMemo(() => ({ label: "JOIN", primary: true, onPick: () => void latest.current.join() }), []);
   const [chips, setChipsState] = useState<Chip[]>([startChip]);
   const chipsRef = useRef<Chip[]>([startChip]);
   const setChips = useCallback((c: Chip[]) => {
@@ -84,6 +85,7 @@ export function useFirstBill() {
   const turns = useRef<ChatTurn[]>([]);
   const skipLive = useRef<(() => void) | null>(null);
   const autoRef = useRef(false);
+  const onboard = useRef<{ firstName: string; payday: number }>({ firstName: "", payday: 18 });
   const decodeCtl = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -148,6 +150,8 @@ export function useFirstBill() {
     setTyping(false);
     setBanner(null);
     setSignupOpen(false);
+    setPlaidOpen(false);
+    onboard.current = { firstName: "", payday: 18 };
     setBusy(false);
     setLastSource(null);
     setContactName("34778");
@@ -160,19 +164,121 @@ export function useFirstBill() {
     const myRun = run.current;
     setChips([]);
     push({ kind: "text", from: "me", text: "JOIN" });
-    stage.current = "joined";
-    const ok = await botSays(
+    stage.current = "askName";
+    setContactName("FirstBill");
+    await botSays(
       [
-        { kind: "text", from: "bot", text: "Welcome to FirstBill. I text you before a bill goes wrong. Free, no app." },
-        { kind: "link", from: "bot", title: "Finish setup in 60 seconds", url: "firstbill.app/join/k7q2" },
-        { kind: "text", from: "bot", text: "I never move your money. Reply STOP anytime." },
+        { kind: "text", from: "bot", text: "Hey! I'm FirstBill. I text you before a bill goes wrong. Free, no app." },
+        { kind: "text", from: "bot", text: "What should I call you?" },
       ],
       myRun,
     );
-    if (!ok) return;
-    setContactName("FirstBill");
-    setChips([{ label: "Open setup link", primary: true, onPick: () => setSignupOpen(true) }]);
   }, [botSays, push]);
+
+  /* ---------------- Setup, all inside the texts ---------------- */
+
+  const answerName = useCallback(
+    async (raw: string) => {
+      const myRun = run.current;
+      const word = (raw.trim().replace(/^(i'?m|im|it'?s|my name is|call me)\s+/i, "").match(/[A-Za-z\u00C0-\u024F'-]+/) || [""])[0].slice(0, 20);
+      push({ kind: "text", from: "me", text: raw.trim() });
+      if (!word) {
+        await botSays([{ kind: "text", from: "bot", text: "Just your first name is fine." }], myRun);
+        return;
+      }
+      const name = word.charAt(0).toUpperCase() + word.slice(1);
+      onboard.current.firstName = name;
+      stage.current = "askPay";
+      const ok = await botSays([{ kind: "text", from: "bot", text: `Nice to meet you, ${name}. What day do you get paid?` }], myRun);
+      if (!ok) return;
+      setChips([
+        { label: "The 1st", onPick: () => void latest.current.answerPay(1, "The 1st") },
+        { label: "The 15th", onPick: () => void latest.current.answerPay(15, "The 15th") },
+        { label: "The 18th", onPick: () => void latest.current.answerPay(18, "The 18th") },
+        { label: "Not sure", onPick: () => void latest.current.answerPay(0, "Not sure") },
+      ]);
+    },
+    [botSays, push, setChips],
+  );
+
+  const answerPay = useCallback(
+    async (dom: number, said: string) => {
+      const myRun = run.current;
+      if (stage.current !== "askPay") return;
+      setChips([]);
+      push({ kind: "text", from: "me", text: said });
+      onboard.current.payday = dom >= 1 && dom <= 28 ? dom : 18;
+      stage.current = "askLoans";
+      const ok = await botSays(
+        [
+          { kind: "text", from: "bot", text: dom ? `Got it, the ${ordinal(onboard.current.payday)}.` : "No problem. I'll spot it in your bank. Looks like the 18th." },
+          { kind: "text", from: "bot", text: "Now your student loans. On StudentAid.gov, tap Download My Aid Data, then send me the file." },
+        ],
+        myRun,
+      );
+      if (!ok) return;
+      setChips([
+        { label: "Attach my aid file", primary: true, onPick: () => void latest.current.attachAid() },
+        { label: "Where do I find it?", onPick: () => void latest.current.whereAid() },
+      ]);
+    },
+    [botSays, push, setChips],
+  );
+
+  const whereAid = useCallback(async () => {
+    const myRun = run.current;
+    const keep = chipsRef.current;
+    setChips([]);
+    push({ kind: "text", from: "me", text: "Where do I find it?" });
+    const ok = await botSays([{ kind: "text", from: "bot", text: "Log in at StudentAid.gov, open My Aid, then tap Download My Aid Data. It's a small text file. Tap + to send it." }], myRun);
+    if (ok) setChips(keep.filter((c) => c.label !== "Where do I find it?"));
+  }, [botSays, push, setChips]);
+
+  const attachAid = useCallback(async () => {
+    const myRun = run.current;
+    if (stage.current !== "askLoans") return;
+    setChips([]);
+    push({ kind: "file", from: "me", name: "MyStudentData.txt", size: "6 KB" });
+    stage.current = "askBank";
+    recompute({ firstName: onboard.current.firstName || "there", paydayDom: onboard.current.payday });
+    const p = profile.current;
+    const ok = await botSays(
+      [
+        { kind: "text", from: "bot", text: `Got it: ${p.loans.length} federal loans, ${money(totalBalance(p)).replace(".00", "")}, with ${p.servicer.split(" ")[0]}. Your grace period ends ${fmtShort(p.graceEnds)}.` },
+        { kind: "text", from: "bot", text: "Last step: link your bank so I can warn you before an overdraft. Read-only. I can't move money." },
+        { kind: "link", from: "bot", title: "Connect your bank", url: "link.plaid.com · read-only", action: "plaid" },
+      ],
+      myRun,
+    );
+    if (ok) setChips([{ label: "Connect my bank", primary: true, onPick: () => void latest.current.openPlaid() }]);
+  }, [botSays, push, recompute, setChips]);
+
+  const [plaidOpen, setPlaidOpen] = useState(false);
+  const openPlaid = useCallback(() => {
+    if (stage.current === "askBank") setPlaidOpen(true);
+  }, []);
+
+  const plaidDone = useCallback(async () => {
+    const myRun = run.current;
+    setPlaidOpen(false);
+    if (stage.current !== "askBank") return false;
+    setChips([]);
+    stage.current = "signedUp";
+    const p = profile.current;
+    const ok = await botSays(
+      [
+        { kind: "text", from: "bot", text: `Connected: checking ••${p.checkingLast4} at First Platypus Bank.` },
+        { kind: "text", from: "bot", text: `You're set, ${p.firstName}. I'll only text when something needs you. Checking your next few weeks now.` },
+      ],
+      myRun,
+    );
+    if (!ok) return false;
+    await sleep(reduceMotion() ? 200 : autoRef.current ? 1400 : 1100);
+    if (run.current !== myRun) return false;
+    await headsUp();
+    return run.current === myRun;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [botSays, setChips]);
 
   /* ---------------- Scene 2: the heads-up text FirstBill sends first ---------------- */
 
@@ -338,7 +444,7 @@ export function useFirstBill() {
       [{ kind: "text", from: "bot", text: `Done. Every payday I'll remind you, only if your bank can spare it. Tip: tell ${profile.current.servicer.split(" ")[0]} the extra goes to principal.` }],
       myRun,
     );
-    if (ok) setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }]);
+    if (ok) setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }, { label: "Start over", onPick: () => void latest.current.reset() }]);
   }, [botSays, push]);
 
   const boostNo = useCallback(async () => {
@@ -348,7 +454,7 @@ export function useFirstBill() {
     setChips([]);
     push({ kind: "text", from: "me", text: "Not now" });
     const ok = await botSays([{ kind: "text", from: "bot", text: "No problem. I'll ask again next payday." }], myRun);
-    if (ok) setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }]);
+    if (ok) setChips([{ label: "Example 2: forward a notice", onPick: () => void latest.current.forwardNotice() }, { label: "Start over", onPick: () => void latest.current.reset() }]);
   }, [botSays, push]);
 
   /* ---------------- Scene 3: a forwarded notice, decoded by Claude ---------------- */
@@ -523,20 +629,30 @@ export function useFirstBill() {
     [aiMode, cannedAnswer, contextText, push, setChips, useLive],
   );
 
-  latest.current = { yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo };
+  latest.current = { yes, ask, forwardNotice, join, reset, paydayBoost, boostYes, boostNo, answerPay, attachAid, whereAid, openPlaid };
 
   /** Anything typed into the composer. */
   const send = useCallback(
     async (raw: string) => {
       const text = raw.trim();
       if (!text || busy) return;
-      if (/^join$/i.test(text) && stage.current === "start") return void join();
+      if (/^join\b/i.test(text) && stage.current === "start") return void join();
+      if (/^(start over|reset|restart)$/i.test(text)) return void reset();
+      if (stage.current === "askName") return void answerName(text);
+      if (stage.current === "askPay") {
+        const n = text.match(/\d{1,2}/);
+        const d = n ? +n[0] : /first/i.test(text) ? 1 : /fifteen/i.test(text) ? 15 : /eighteen/i.test(text) ? 18 : /not sure|idk|don.?t know|every|bi.?weekly/i.test(text) ? 0 : -1;
+        if (d >= 0) return void latest.current.answerPay(d, text);
+      }
+      if (stage.current === "askLoans" && /where|how|find|what/i.test(text)) return void whereAid();
+      if (stage.current === "askLoans") return void attachAid();
+      if (stage.current === "askBank") return void openPlaid();
       if (/^(yes|y|yes please|yep|yeah|ok|okay|do it|bet)[.!]*$/i.test(text) && (stage.current === "alerted" || stage.current === "noticeAsk")) return void yes();
       if (/^(start over|reset|restart)$/i.test(text)) return void reset();
       if (looksLikeNotice(text)) return void pasteNotice(text);
       return void ask(text);
     },
-    [ask, busy, join, pasteNotice, reset, yes],
+    [ask, busy, join, pasteNotice, reset, yes, answerName, attachAid, whereAid, openPlaid],
   );
 
   /* ---------------- Hands-free demo for screen recording ---------------- */
@@ -547,41 +663,35 @@ export function useFirstBill() {
     const myRun = run.current;
     autoRef.current = true;
     setAutoplaying(true);
-    await sleep(500);
-    if (run.current !== myRun) return;
+    const live = () => run.current === myRun && autoRef.current;
+    const step = async (ms: number) => { await sleep(ms); return live(); };
+    if (!(await step(500))) return;
     await join();
-    if (run.current !== myRun) return;
-    await sleep(1100);
-    if (run.current !== myRun) return;
-    setSignupOpen(true);
-    await sleep(500);
-    if (run.current !== myRun) return;
-    setAutofill((n) => n + 1); // the sheet fills itself, then calls onSignupDone
-  }, [join, reset]);
+    if (!(await step(900))) return;
+    await answerName("Tariq");
+    if (!(await step(900))) return;
+    await latest.current.answerPay(18, "The 18th");
+    if (!(await step(1000))) return;
+    await attachAid();
+    if (!(await step(900))) return;
+    openPlaid();
+    if (!(await step(1600))) return;
+    const done = await plaidDone();
+    if (done && live() && stage.current === "alerted") {
+      if (!(await step(2200))) return;
+      await yes();
+      if (live() && (stage.current as Stage) === "boost") {
+        if (!(await step(2000))) return;
+        await latest.current.boostYes();
+      }
+    }
+    if (run.current === myRun) {
+      autoRef.current = false;
+      setAutoplaying(false);
+    }
+  }, [answerName, attachAid, join, openPlaid, plaidDone, reset, yes]);
 
-  const onSignupDone = useCallback(
-    async (info: SignupInfo) => {
-      const myRun = run.current;
-      const done = await completeSignup(info);
-      if (!autoRef.current || run.current !== myRun) return;
-      if (done && stage.current === "alerted") {
-        await sleep(2200);
-        if (run.current !== myRun || !autoRef.current) return;
-        await yes();
-        if (run.current !== myRun || !autoRef.current) return;
-        if ((stage.current as Stage) === "boost") {
-          await sleep(2000);
-          if (run.current !== myRun || !autoRef.current) return;
-          await latest.current.boostYes();
-        }
-      }
-      if (run.current === myRun) {
-        autoRef.current = false;
-        setAutoplaying(false);
-      }
-    },
-    [completeSignup, yes],
-  );
+  const onSignupDone = useCallback(async (_info: SignupInfo) => {}, []);
 
   const stopAuto = useCallback(() => {
     reset();
@@ -623,6 +733,12 @@ export function useFirstBill() {
     contactName,
     autoplaying,
     autofill,
+    plaidOpen,
+    setPlaidOpen,
+    plaidDone,
+    openPlaid,
+    attachAid,
+    stage: stage.current,
     canOpenSignup: stage.current === "joined",
     profile: profile.current,
     send,

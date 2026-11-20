@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronLeft, Plus, Video } from "lucide-react";
+import { ArrowUp, ChevronLeft, FileText, Plus, RotateCcw, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FirstBillApi, Msg } from "@/hooks/useFirstBill";
 import { BankCard, ClockCard, DraftCard, LinkCard, NoticeAttachment, TimelineCard } from "./Cards";
-import { SignupSheet } from "./SignupSheet";
 
 function useClock() {
   const [now, setNow] = useState(() => new Date());
@@ -28,10 +27,10 @@ function StatusBar() {
   );
 }
 
-function Header({ name }: { name: string }) {
+function Header({ name, full, onReset }: { name: string; full?: boolean; onReset?: () => void }) {
   const known = name === "FirstBill";
   return (
-    <div className="relative z-10 border-b border-ph-sep bg-ph-bar pb-2 pt-12 backdrop-blur">
+    <div className={cn("relative z-10 border-b border-ph-sep bg-ph-bar pb-2 backdrop-blur", full ? "pt-[max(10px,env(safe-area-inset-top))]" : "pt-12")}>
       <div className="flex items-start justify-between px-3">
         <span className="flex items-center text-[17px] text-ph-out">
           <ChevronLeft className="h-6 w-6" />
@@ -45,15 +44,22 @@ function Header({ name }: { name: string }) {
             {name} <span className="text-ph-sub">›</span>
           </span>
         </div>
-        <Video className="mt-1 h-6 w-6 text-ph-out" />
+        {full ? (
+          <button type="button" onClick={onReset} className="grid h-9 w-9 place-items-center rounded-full text-ph-out" aria-label="Start over">
+            <RotateCcw className="h-5 w-5" />
+          </button>
+        ) : (
+          <Video className="mt-1 h-6 w-6 text-ph-out" />
+        )}
       </div>
     </div>
   );
 }
 
-function NotificationBanner({ title, body }: { title: string; body: string }) {
+function NotificationBanner({ title, body, full }: { title: string; body: string; full?: boolean }) {
   return (
-    <div className="absolute inset-x-2 top-12 z-40 animate-banner-in rounded-[22px] border border-white/20 bg-[rgba(245,245,247,0.92)] p-3 text-black shadow-xl backdrop-blur-md">
+    <div className={cn("absolute inset-x-2 z-40", full ? "top-[max(8px,env(safe-area-inset-top))]" : "top-12")} >
+    <div className=" animate-banner-in rounded-[22px] border border-white/20 bg-[rgba(245,245,247,0.92)] p-3 text-black shadow-xl backdrop-blur-md">
       <div className="flex gap-3">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#34c759]">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" aria-hidden><path d="M12 3C6.5 3 2 6.6 2 11c0 2.4 1.3 4.6 3.4 6.1L4.6 21l4.1-2.2c1 .3 2.1.4 3.3.4 5.5 0 10-3.6 10-8.1S17.5 3 12 3Z" /></svg>
@@ -66,6 +72,7 @@ function NotificationBanner({ title, body }: { title: string; body: string }) {
           <p className="line-clamp-2 text-[14px] leading-snug text-[#1c1c1e]">{body}</p>
         </div>
       </div>
+    </div>
     </div>
   );
 }
@@ -106,7 +113,7 @@ function Row({ m, next, api }: { m: Msg; next?: Msg; api: FirstBillApi }) {
       body = <NoticeAttachment title={m.title} servicer={m.servicer} text={m.text} />;
       break;
     case "link":
-      body = <LinkCard title={m.title} url={m.url} onOpen={() => api.canOpenSignup && api.setSignupOpen(true)} />;
+      body = <LinkCard title={m.title} url={m.url} onOpen={() => (m.action === "plaid" ? api.openPlaid() : api.canOpenSignup && api.setSignupOpen(true))} />;
       break;
     case "timeline":
       body = <TimelineCard alert={m.alert} profile={m.profile} />;
@@ -119,6 +126,19 @@ function Row({ m, next, api }: { m: Msg; next?: Msg; api: FirstBillApi }) {
       break;
     case "draft":
       body = <DraftCard to={m.to} text={m.text} />;
+      break;
+    case "file":
+      body = (
+        <div className="flex w-[70%] max-w-[250px] items-center gap-3 rounded-[18px] bg-ph-out px-3 py-2.5 text-ph-out-ink">
+          <span className="grid h-10 w-9 shrink-0 place-items-center rounded-md bg-white/20">
+            <FileText className="h-5 w-5" />
+          </span>
+          <span className="min-w-0">
+            <b className="block truncate text-[14px]">{m.name}</b>
+            <span className="text-[12px] opacity-80">{m.size} · StudentAid.gov</span>
+          </span>
+        </div>
+      );
       break;
   }
   return <div className={cn("flex animate-bubble-in px-3", from === "me" ? "justify-end" : "justify-start", sameNext ? "pb-[2px]" : "pb-2")}>{body}</div>;
@@ -136,7 +156,48 @@ function Typing() {
   );
 }
 
-export function Phone({ api }: { api: FirstBillApi }) {
+function PlaidSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [step, setStep] = useState<"pick" | "busy">("pick");
+  const go = () => {
+    if (step === "busy") return;
+    setStep("busy");
+    setTimeout(onDone, 900);
+  };
+  return (
+    <div className="absolute inset-0 z-40 flex items-end bg-black/40" role="dialog" aria-label="Connect your bank">
+      <div className="w-full animate-in slide-in-from-bottom-10 rounded-t-3xl bg-white p-5 pb-[max(20px,env(safe-area-inset-bottom))] text-black duration-200">
+        <div className="flex items-center justify-between">
+          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center" aria-label="Back">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <span className="text-[13px] font-bold tracking-wide">PLAID · SANDBOX</span>
+          <span className="w-9" />
+        </div>
+        <p className="mt-3 text-[16px] font-semibold leading-snug">FirstBill wants read-only access to your balance and upcoming bills.</p>
+        <p className="mt-1 text-[13px] text-[#666]">It can never move money. Test bank, sample data.</p>
+        <button type="button" onClick={go} className="mt-4 flex w-full items-center gap-3 rounded-xl border border-[#ddd] px-3 py-3 text-left">
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-[#e8f0fe] text-[13px] font-bold text-[#1a56db]">FP</span>
+          <span className="flex-1">
+            <b className="text-[15px]">First Platypus Bank</b>
+            <span className="block text-[12px] text-[#666]">Plaid test bank · Checking ••6602</span>
+          </span>
+        </button>
+        <button type="button" onClick={go} className="mt-4 h-12 w-full rounded-xl bg-black text-[16px] font-semibold text-white">
+          {step === "busy" ? "Connecting…" : "Continue"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const HINTS: Record<string, string> = {
+  start: "Type JOIN",
+  askName: "Type your first name",
+  askPay: "Type a day, like 15",
+  askLoans: "Tap + to attach your file",
+};
+
+export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boolean }) {
   const [draft, setDraft] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -156,20 +217,24 @@ export function Phone({ api }: { api: FirstBillApi }) {
   const lastIsMine = api.msgs.length > 0 && api.msgs[api.msgs.length - 1] === lastMine && !api.typing;
 
   return (
-    <div className="phone-frame relative mx-auto w-full max-w-[402px] sm:rounded-[58px] sm:bg-bezel sm:p-[11px] sm:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.45)]">
-      <div className="relative flex h-[min(820px,86dvh)] min-h-[600px] flex-col overflow-hidden rounded-[28px] bg-ph-bg font-ios text-ph-ink sm:h-[min(820px,calc(100dvh-64px))] sm:rounded-[48px]">
-        {/* dynamic island */}
-        <div className="absolute left-1/2 top-[11px] z-50 hidden h-[30px] w-[110px] -translate-x-1/2 rounded-full bg-black sm:block" aria-hidden />
-        <StatusBar />
-        {api.banner && <NotificationBanner title={api.banner.title} body={api.banner.body} />}
-        <Header name={api.contactName} />
+    <div className={cn("phone-frame relative mx-auto w-full", fullscreen ? "h-full" : "max-w-[402px] sm:rounded-[58px] sm:bg-bezel sm:p-[11px] sm:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.45)]")}>
+      <div className={cn("relative flex flex-col overflow-hidden bg-ph-bg font-ios text-ph-ink", fullscreen ? "h-full" : "h-[min(820px,86dvh)] min-h-[600px] rounded-[28px] sm:h-[min(820px,calc(100dvh-64px))] sm:rounded-[48px]")}>
+        {!fullscreen && (
+          <>
+            {/* dynamic island */}
+            <div className="absolute left-1/2 top-[11px] z-50 hidden h-[30px] w-[110px] -translate-x-1/2 rounded-full bg-black sm:block" aria-hidden />
+            <StatusBar />
+          </>
+        )}
+        {api.banner && <NotificationBanner title={api.banner.title} body={api.banner.body} full={fullscreen} />}
+        <Header name={api.contactName} full={fullscreen} onReset={() => api.reset()} />
 
         <div ref={scroller} className="no-scrollbar flex-1 overflow-y-auto pt-3" aria-live="polite">
           {api.msgs.length === 0 && (
             <div className="mx-6 mt-10 text-center text-ph-sub">
               <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-2xl bg-[#0b6b52] font-display text-2xl font-bold text-white">FB</div>
-              <p className="text-[15px] font-semibold text-ph-ink">Text JOIN to 34778</p>
-              <p className="mt-1 text-[13px] leading-snug">That's the whole signup start. FirstBill texts you before a student loan bill goes wrong. No app to download.</p>
+              <p className="text-[17px] font-semibold text-ph-ink">Text JOIN to start</p>
+              <p className="mt-1 text-[14px] leading-snug">FirstBill texts you before a student loan bill goes wrong. No app.</p>
             </div>
           )}
           {api.msgs.map((m, i) => (
@@ -199,13 +264,18 @@ export function Phone({ api }: { api: FirstBillApi }) {
         )}
 
         <form
-          className="flex items-end gap-2 border-t border-ph-sep bg-ph-bar px-2.5 pb-7 pt-2 sm:pb-8"
+          className={cn("flex items-end gap-2 border-t border-ph-sep bg-ph-bar px-2.5 pt-2", fullscreen ? "pb-[max(10px,env(safe-area-inset-bottom))]" : "pb-7 sm:pb-8")}
           onSubmit={(e) => {
             e.preventDefault();
             submit();
           }}
         >
-          <button type="button" onClick={() => void api.forwardNotice()} className="mb-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ph-in text-ph-sub" aria-label="Forward a sample notice">
+          <button
+            type="button"
+            onClick={() => (api.stage === "askLoans" ? void api.attachAid() : api.stage === "askBank" ? api.openPlaid() : void api.forwardNotice())}
+            className={cn("mb-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full", api.stage === "askLoans" ? "bg-ph-out text-ph-out-ink" : "bg-ph-in text-ph-sub")}
+            aria-label={api.stage === "askLoans" ? "Attach your aid file" : "Forward a sample notice"}
+          >
             <Plus className="h-5 w-5" />
           </button>
           <div className="flex min-h-[36px] flex-1 items-end rounded-[18px] border border-ph-sep bg-ph-bg pl-3 pr-1">
@@ -224,7 +294,7 @@ export function Phone({ api }: { api: FirstBillApi }) {
                   submit();
                 }
               }}
-              placeholder="Text Message"
+              placeholder={HINTS[api.stage] ?? "Text Message"}
               className="max-h-28 min-h-[34px] flex-1 resize-none bg-transparent py-[7px] text-[16px] leading-5 text-ph-ink outline-none placeholder:text-ph-sub"
             />
             <button
@@ -237,9 +307,9 @@ export function Phone({ api }: { api: FirstBillApi }) {
             </button>
           </div>
         </form>
-        <div className="pointer-events-none absolute bottom-2 left-1/2 h-[5px] w-32 -translate-x-1/2 rounded-full bg-ph-ink opacity-80" aria-hidden />
+        {!fullscreen && <div className="pointer-events-none absolute bottom-2 left-1/2 h-[5px] w-32 -translate-x-1/2 rounded-full bg-ph-ink opacity-80" aria-hidden />}
 
-        <SignupSheet open={api.signupOpen} onClose={() => api.setSignupOpen(false)} onDone={api.onSignupDone} autofill={api.autofill} />
+        {api.plaidOpen && <PlaidSheet onClose={() => api.setPlaidOpen(false)} onDone={() => void api.plaidDone()} />}
       </div>
     </div>
   );
