@@ -540,7 +540,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
         )}
 
         {api.chips.length > 0 && (
-          <p className="px-4 pt-1.5 text-[11px] leading-[14px] text-ph-sub">(Simulated replies. You can also type your own.)</p>
+          <p className="px-4 pt-1.5 text-[11px] leading-[14px] text-ph-sub">(Simulated replies. This is actually not iMessage, but you can also type your own.)</p>
         )}
         {api.chips.length > 0 && (
           <div className="no-scrollbar flex gap-2 overflow-x-auto px-3 pb-2 pt-1">

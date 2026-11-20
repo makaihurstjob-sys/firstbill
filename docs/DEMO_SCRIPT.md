@@ -6,7 +6,7 @@
 
 Every reply from PayPing ends with its own short text: "This is not financial advice."
 
-The buttons above the keyboard are labeled "(Simulated replies. You can also type your own.)" Real iMessage has no suggested replies, so say: "These just save typing for the demo. You can type anything."
+The buttons above the keyboard are labeled "(Simulated replies. This is actually not iMessage, but you can also type your own.)" Real iMessage has no suggested replies, so say: "These just save typing for the demo. You can type anything."
 
 ---
 
