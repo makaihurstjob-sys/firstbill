@@ -40,6 +40,9 @@ export type MsgBody =
 /** disc: the "This is not financial advice." text PayPing sends as its own message after every reply. */
 type Out = MsgBody & { nfa?: boolean; disc?: boolean };
 export const DISCLAIMER = "This is not financial advice.";
+/** The disclaimer follows only replies that talk real money: dollar amounts, rates, interest, balances, payment plans. */
+const MONEY_TALK = /\$\s?\d|\d\s?%|\binterest\b|payment plan|\bbalance\b|overdraft/i;
+const talksMoney = (items: MsgBody[]) => items.some((m) => (m.kind === "text" || m.kind === "draft") && m.from === "bot" && MONEY_TALK.test(m.text));
 export type Msg = Out & { id: string };
 
 export type Chip = { label: string; onPick: () => void; primary?: boolean };
@@ -228,8 +231,8 @@ export function useFirstBill() {
       }
       if (run.current !== myRun) return false;
       const last = items[items.length - 1];
-      if (last && last.kind !== "divider" && last.from === "bot") {
-        // Every reply ends with the disclaimer as its own short text.
+      if (last && last.kind !== "divider" && last.from === "bot" && talksMoney(items)) {
+        // Replies about real numbers end with the disclaimer as its own short text.
         setTyping(true);
         await sleep(reduceMotion() ? 80 : FAST ? 300 : 600);
         if (run.current !== myRun) return false;
@@ -844,9 +847,11 @@ export function useFirstBill() {
         if (run.current !== myRun) return;
         push({ kind: "text", from: "bot", text: nd });
       }
-      await sleep(reduceMotion() ? 60 : 450);
-      if (run.current !== myRun) return;
-      push({ kind: "text", from: "bot", text: DISCLAIMER, disc: true });
+      if (MONEY_TALK.test(answer) || (nd && MONEY_TALK.test(nd))) {
+        await sleep(reduceMotion() ? 60 : 450);
+        if (run.current !== myRun) return;
+        push({ kind: "text", from: "bot", text: DISCLAIMER, disc: true });
+      }
       if (/^stop\b/i.test(q)) {
         setChips([{ label: "JOIN", primary: true, onPick: () => { latest.current.reset(); void latest.current.join(); } }]);
         return;
@@ -1335,48 +1340,75 @@ export function useFirstBill() {
   /* ---------------- Hands-free demo for screen recording ---------------- */
 
   const [autofill, setAutofill] = useState(0); // bump tells the signup sheet to fill itself in
+  /** "Play automatically": the whole story hands-free, at reading pace, for judges. */
   const playAll = useCallback(async () => {
     reset({ idle: false });
+    await sleep(60);
     const myRun = run.current;
     autoRef.current = true;
     setAutoplaying(true);
     const live = () => run.current === myRun && autoRef.current;
-    const step = async (ms: number) => { await sleep(ms); return live(); };
-    if (!(await step(500))) return;
+    const step = async (ms: number) => {
+      await sleep(FAST ? ms / 2 : ms);
+      return live();
+    };
+    const at = (st: Stage) => live() && stage.current === st;
+    const L = () => latest.current;
+    const finish = () => {
+      if (run.current === myRun) {
+        autoRef.current = false;
+        setAutoplaying(false);
+      }
+    };
+    if (!(await step(700))) return;
     await join();
-    if (!(await step(900))) return;
+    if (!(await step(1500))) return;
     await answerName("Tariq");
-    if (!(await step(900))) return;
-    await latest.current.answerPay(18, "The 18th");
-    if (!(await step(1000))) return;
+    if (!(await step(1500))) return;
+    await L().answerPay(18, "The 18th");
+    if (!(await step(1900))) return;
     await attachAid();
-    if (!(await step(900))) return;
+    if (!(await step(1900))) return;
     openPlaid();
-    if (!(await step(1600))) return;
+    if (!(await step(2400))) return;
     const done = await plaidDone();
-    if (done && live() && stage.current === "alerted") {
+    if (!done || !at("alerted")) return finish();
+    if (!(await step(2800))) return;
+    await yes(); // writes the request, then the Dec 1 check-in
+    if (at("followUp")) {
       if (!(await step(2200))) return;
-      await yes();
-      if (live() && (stage.current as Stage) === "followUp") {
-        if (!(await step(1600))) return;
-        await latest.current.answerFollowUp(0, "YES");
-      }
-      if (live() && (stage.current as Stage) === "boost") {
-        if (!(await step(2000))) return;
-        await latest.current.boostYes();
-      }
+      await L().answerFollowUp(0, "YES"); // then payday
     }
-    if (run.current === myRun) {
-      autoRef.current = false;
-      setAutoplaying(false);
+    if (at("boost")) {
+      if (!(await step(2600))) return;
+      await L().boostYes(BOOST, `${money(BOOST).replace(".00", "")} a month`);
     }
-  }, [answerName, attachAid, join, openPlaid, plaidDone, reset, yes]);
+    if (at("remindAsk")) {
+      if (!(await step(2000))) return;
+      await L().remind(true, "Yes, remind me");
+    }
+    if (!(await step(2800))) return;
+    const parsed = parseTriage(EXAMPLE);
+    if (parsed) await runTriage(EXAMPLE, parsed);
+    if (at("triageAsk")) {
+      if (!(await step(2600))) return;
+      await yes(); // landlord note, then the next-day check-in
+    }
+    if (at("followUp")) {
+      if (!(await step(2200))) return;
+      await L().answerFollowUp(0, "YES");
+    }
+    finish();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answerName, attachAid, join, openPlaid, plaidDone, reset, yes, runTriage]);
 
   const onSignupDone = useCallback(async (_info: SignupInfo) => {}, []);
 
+  /** Stop autoplay and leave the chat where it is. */
   const stopAuto = useCallback(() => {
-    reset();
-  }, [reset]);
+    autoRef.current = false;
+    setAutoplaying(false);
+  }, []);
 
   const jumpToHeadsUp = useCallback(async () => {
     reset({ idle: false });
@@ -1420,6 +1452,8 @@ export function useFirstBill() {
     openPlaid,
     attachAid,
     stage: stage.current,
+    fuKey: fu.current,
+    dueState: due.current,
     canOpenSignup: stage.current === "joined",
     profile: profile.current,
     send,
