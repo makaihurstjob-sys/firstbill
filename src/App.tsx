@@ -1,4 +1,5 @@
 import { Phone } from "@/components/phone/Phone";
+import { DemoSide } from "@/components/DemoSide";
 import { useFirstBill } from "@/hooks/useFirstBill";
 import { useEffect, useState } from "react";
 
@@ -62,10 +63,15 @@ export default function App() {
       </div>
     );
   }
+  // Desktop: the iPhone stays dead center on black; autoplay, reset and a small step list sit to its right.
   return (
-    <main className="fixed inset-0 grid place-items-center overflow-hidden bg-black p-4">
-      <div className="w-[402px] max-w-full rounded-[58px] ring-1 ring-white/15">
+    <main className="fixed inset-0 grid grid-cols-[1fr_402px_1fr] items-center overflow-hidden bg-black p-4">
+      <div />
+      <div className="w-[402px] rounded-[58px] ring-1 ring-white/15">
         <Phone api={api} />
+      </div>
+      <div className="hidden justify-start pl-8 lg:flex xl:pl-14">
+        <DemoSide api={api} />
       </div>
     </main>
   );
