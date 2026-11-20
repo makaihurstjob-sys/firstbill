@@ -77,3 +77,10 @@ The presenter panel then shows "Bank data from: Plaid Sandbox (live)". With no k
 - A forbearance can cover past-due months so the account becomes current, but interest keeps accruing.
 - The Repayment Assistance Plan (RAP) began July 1, 2026. Applying at StudentAid.gov is free.
 - Sources are in the team's research file, compiled Nov 20, 2026 (NY Fed, Fed SHED 2025, CFPB, NPR).
+
+## How the AI is powered (and why it stays cheap)
+
+FirstBill texts from a server (iMessage/SMS go through a provider like Sendblue or Twilio), so the AI runs server-side, not on the phone. Most of what FirstBill does needs no AI at all: payday, overdraft and payoff math, reminders and YES/STOP handling are plain code, and most texts are templates filled with numbers. The AI only writes words when someone forwards a letter or asks a free-form question, a few times a month per user.
+
+- Today: Claude (small, fast tier) through the `firstbill-ai` edge function, with built-in answers if it's down. The model only sees the letter or question text, never logins, SSNs or full account numbers.
+- Later, for schools that want self-hosting: a small open model on a single GPU server can take the routine replies, with Claude kept for decoding letters, where accuracy matters most. A cheap CPU-only VPS is too slow for a chat model at real volume.

@@ -29,7 +29,7 @@ import {
 export type MsgBody =
   | { kind: "text"; from: "bot" | "me"; text: string }
   | { kind: "notice"; from: "me"; title: string; servicer: string; text: string }
-  | { kind: "link"; from: "bot"; title: string; url: string; action?: "plaid" }
+  | { kind: "link"; from: "bot"; title: string; url: string; action?: "plaid" | "aid"; brand?: "firstbill" | "studentaid" | "plaid" }
   | { kind: "timeline"; from: "bot"; alert: Alert; profile: Profile }
   | { kind: "clock"; from: "bot"; daysLeft: number; lateToday: number; threshold: number; hitDate: string; federal: boolean }
   | { kind: "bank"; from: "bot"; amount: number; balance: number; last4: string; payday: string }
@@ -212,15 +212,13 @@ export function useFirstBill() {
       const ok = await botSays(
         [
           { kind: "text", from: "bot", text: dom ? `Got it, the ${ordinal(onboard.current.payday)}.` : "No problem. I'll spot it in your bank. Looks like the 18th." },
-          { kind: "text", from: "bot", text: "Now your student loans. On StudentAid.gov, tap Download My Aid Data, then send me the file." },
+          { kind: "text", from: "bot", text: "Now your student loans. Grab your file here, then send it to me." },
+          { kind: "link", from: "bot", title: "Download My Aid Data", url: "studentaid.gov", action: "aid", brand: "studentaid" },
         ],
         myRun,
       );
       if (!ok) return;
-      setChips([
-        { label: "Attach my aid file", primary: true, onPick: () => void latest.current.attachAid() },
-        { label: "Where do I find it?", onPick: () => void latest.current.whereAid() },
-      ]);
+      setChips([{ label: "Attach my aid file", primary: true, onPick: () => void latest.current.attachAid() }]);
     },
     [botSays, push, setChips],
   );
@@ -245,8 +243,8 @@ export function useFirstBill() {
     const ok = await botSays(
       [
         { kind: "text", from: "bot", text: `Got it: ${p.loans.length} federal loans, ${money(totalBalance(p)).replace(".00", "")}, with ${p.servicer.split(" ")[0]}. Your grace period ends ${fmtShort(p.graceEnds)}.` },
-        { kind: "text", from: "bot", text: "Last step: link your bank so I can warn you before an overdraft. Read-only. I can't move money." },
-        { kind: "link", from: "bot", title: "Connect your bank", url: "link.plaid.com · read-only", action: "plaid" },
+        { kind: "text", from: "bot", text: "Last step: link your bank so I can warn you before an overdraft. Read-only." },
+        { kind: "link", from: "bot", title: "Connect your bank", url: "plaid.com", action: "plaid", brand: "plaid" },
       ],
       myRun,
     );

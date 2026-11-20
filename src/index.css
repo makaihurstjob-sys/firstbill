@@ -105,26 +105,23 @@ body {
 }
 h1, h2, h3 { text-wrap: balance; }
 
-/* iMessage bubble tails */
+/* iMessage bubble tails (the classic two-pseudo-element tail) */
 .bubble { position: relative; }
-.bubble.tail-me::after,
-.bubble.tail-bot::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  width: 14px;
-  height: 18px;
-}
-.bubble.tail-me::after {
-  right: -5px;
-  background: radial-gradient(circle at 0 0, transparent 13px, var(--bub-out) 13.5px);
-  clip-path: polygon(0 30%, 100% 100%, 0 100%);
-}
-.bubble.tail-bot::after {
-  left: -5px;
-  background: radial-gradient(circle at 100% 0, transparent 13px, var(--bub-in) 13.5px);
-  clip-path: polygon(100% 30%, 100% 100%, 0 100%);
-}
+.bubble.tail-me::before, .bubble.tail-bot::before,
+.bubble.tail-me::after, .bubble.tail-bot::after { content: ""; position: absolute; bottom: 0; height: 20px; }
+.bubble.tail-me::before { right: -7px; width: 20px; background: var(--bub-out); border-bottom-left-radius: 16px 14px; z-index: 0; }
+.bubble.tail-me::after { right: -26px; width: 26px; background: var(--ph-bg); border-bottom-left-radius: 10px; z-index: 1; }
+.bubble.tail-bot::before { left: -7px; width: 20px; background: var(--bub-in); border-bottom-right-radius: 16px 14px; z-index: 0; }
+.bubble.tail-bot::after { left: -26px; width: 26px; background: var(--ph-bg); border-bottom-right-radius: 10px; z-index: 1; }
+.bubble > * { position: relative; z-index: 2; }
+
+/* Feels like an app: no zoom, no stray selection or callouts. Message text and the draft stay selectable. */
+html, body { touch-action: manipulation; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+* { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.phone-frame { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.phone-frame textarea, .phone-frame [data-draft] p { -webkit-user-select: text; user-select: text; }
+@keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, .45); } 50% { box-shadow: 0 0 0 6px rgba(255, 59, 48, 0); } }
+.mic-live { animation: mic-pulse 1.2s ease-in-out infinite; }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; }

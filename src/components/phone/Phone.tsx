@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronLeft, FileText, Plus, RotateCcw, Video } from "lucide-react";
+import { ArrowUp, ChevronLeft, FileText, Mic, Plus, RotateCcw, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FirstBillApi, Msg } from "@/hooks/useFirstBill";
 import { BankCard, ClockCard, DraftCard, LinkCard, NoticeAttachment, TimelineCard } from "./Cards";
@@ -82,12 +82,12 @@ function Bubble({ from, text, tail }: { from: "me" | "bot"; text: string; tail: 
   return (
     <div
       className={cn(
-        "bubble max-w-[78%] whitespace-pre-wrap break-words rounded-[18px] px-3 py-[7px] text-[16px] leading-[1.3]",
+        "bubble max-w-[75%] whitespace-pre-wrap break-words rounded-[18px] px-3 py-[6px] text-[17px] leading-[22px] tracking-[-0.41px]",
         me ? "bg-ph-out text-ph-out-ink" : "bg-ph-in text-ph-in-ink",
         tail && (me ? "tail-me" : "tail-bot"),
       )}
     >
-      {text}
+      <span>{text}</span>
     </div>
   );
 }
@@ -95,7 +95,7 @@ function Bubble({ from, text, tail }: { from: "me" | "bot"; text: string; tail: 
 function Row({ m, next, api }: { m: Msg; next?: Msg; api: FirstBillApi }) {
   if (m.kind === "divider") {
     return (
-      <div className="py-2 text-center text-[11px] text-ph-sub">
+      <div className="pb-1 pt-3 text-center text-[12px] leading-4 text-ph-sub">
         <b className="font-semibold">{m.text.split(" ")[0]}</b> {m.text.split(" ").slice(1).join(" ")}
         {m.sub && <div className="mt-0.5 italic">{m.sub}</div>}
       </div>
@@ -113,7 +113,7 @@ function Row({ m, next, api }: { m: Msg; next?: Msg; api: FirstBillApi }) {
       body = <NoticeAttachment title={m.title} servicer={m.servicer} text={m.text} />;
       break;
     case "link":
-      body = <LinkCard title={m.title} url={m.url} onOpen={() => (m.action === "plaid" ? api.openPlaid() : api.canOpenSignup && api.setSignupOpen(true))} />;
+      body = <LinkCard title={m.title} url={m.url} brand={m.brand} onOpen={() => (m.action === "plaid" ? api.openPlaid() : m.action === "aid" ? void api.attachAid() : api.canOpenSignup && api.setSignupOpen(true))} />;
       break;
     case "timeline":
       body = <TimelineCard alert={m.alert} profile={m.profile} />;
@@ -190,6 +190,30 @@ function PlaidSheet({ onClose, onDone }: { onClose: () => void; onDone: () => vo
   );
 }
 
+type Rec = { lang: string; interimResults: boolean; continuous: boolean; start: () => void; stop: () => void; onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };
+
+/** Dictation with the browser's own speech recognition (Safari and Chrome). Hidden where it isn't available. */
+function useDictation(onText: (t: string) => void) {
+  const Ctor = typeof window !== "undefined" ? ((window as unknown as Record<string, unknown>).SpeechRecognition ?? (window as unknown as Record<string, unknown>).webkitSpeechRecognition) as (new () => Rec) | undefined : undefined;
+  const [on, setOn] = useState(false);
+  const rec = useRef<Rec | null>(null);
+  const cb = useRef(onText);
+  cb.current = onText;
+  const toggle = () => {
+    if (!Ctor) return;
+    if (on) { rec.current?.stop(); return; }
+    try {
+      const r = new Ctor();
+      r.lang = "en-US"; r.interimResults = true; r.continuous = false;
+      r.onresult = (e) => { let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; cb.current(t); };
+      r.onend = () => setOn(false);
+      r.onerror = () => setOn(false);
+      rec.current = r; r.start(); setOn(true);
+    } catch { setOn(false); }
+  };
+  return { supported: Boolean(Ctor), on, toggle };
+}
+
 const HINTS: Record<string, string> = {
   start: "Type JOIN",
   askName: "Type your first name",
@@ -201,6 +225,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
   const [draft, setDraft] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const mic = useDictation((t) => setDraft(t));
 
   useEffect(() => {
     const el = scroller.current;
@@ -264,7 +289,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
         )}
 
         <form
-          className={cn("flex items-end gap-2 border-t border-ph-sep bg-ph-bar px-2.5 pt-2", fullscreen ? "pb-[max(10px,env(safe-area-inset-bottom))]" : "pb-7 sm:pb-8")}
+          className={cn("flex items-end gap-2 bg-ph-bg px-2 pt-1.5", fullscreen ? "pb-[max(8px,env(safe-area-inset-bottom))]" : "pb-7 sm:pb-8")}
           onSubmit={(e) => {
             e.preventDefault();
             submit();
@@ -273,12 +298,12 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
           <button
             type="button"
             onClick={() => (api.stage === "askLoans" ? void api.attachAid() : api.stage === "askBank" ? api.openPlaid() : void api.forwardNotice())}
-            className={cn("mb-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full", api.stage === "askLoans" ? "bg-ph-out text-ph-out-ink" : "bg-ph-in text-ph-sub")}
+            className={cn("mb-[1px] grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full", api.stage === "askLoans" ? "bg-ph-out text-ph-out-ink" : "bg-ph-in text-ph-sub")}
             aria-label={api.stage === "askLoans" ? "Attach your aid file" : "Forward a sample notice"}
           >
-            <Plus className="h-5 w-5" />
+            <Plus className="h-[20px] w-[20px]" strokeWidth={2.4} />
           </button>
-          <div className="flex min-h-[36px] flex-1 items-end rounded-[18px] border border-ph-sep bg-ph-bg pl-3 pr-1">
+          <div className="flex min-h-[36px] flex-1 items-end rounded-[18px] border border-ph-sep bg-ph-bg pl-3 pr-[3px]">
             <label htmlFor="fb-composer" className="sr-only">
               Text message
             </label>
@@ -294,17 +319,32 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
                   submit();
                 }
               }}
-              placeholder={HINTS[api.stage] ?? "Text Message"}
-              className="max-h-28 min-h-[34px] flex-1 resize-none bg-transparent py-[7px] text-[16px] leading-5 text-ph-ink outline-none placeholder:text-ph-sub"
+              placeholder={mic.on ? "Listening…" : HINTS[api.stage] ?? "iMessage"}
+              className="max-h-28 min-h-[34px] flex-1 resize-none bg-transparent py-[6px] text-[17px] leading-[22px] tracking-[-0.41px] text-ph-ink outline-none placeholder:text-ph-sub"
             />
-            <button
-              type="submit"
-              disabled={!draft.trim() || api.busy}
-              className="mb-[3px] grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ph-out text-ph-out-ink transition-opacity disabled:opacity-30"
-              aria-label="Send"
-            >
-              <ArrowUp className="h-4 w-4" strokeWidth={3} />
-            </button>
+            {draft.trim() && !mic.on ? (
+              <button
+                type="submit"
+                disabled={api.busy}
+                className="mb-[3px] grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full bg-ph-out text-ph-out-ink transition-opacity disabled:opacity-30"
+                aria-label="Send"
+              >
+                <ArrowUp className="h-[18px] w-[18px]" strokeWidth={3} />
+              </button>
+            ) : mic.supported ? (
+              <button
+                type="button"
+                onClick={mic.toggle}
+                className={cn("mb-[3px] grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full", mic.on ? "mic-live bg-[#ff3b30] text-white" : "text-ph-sub")}
+                aria-label={mic.on ? "Stop dictation" : "Dictate a message"}
+              >
+                <Mic className="h-[19px] w-[19px]" />
+              </button>
+            ) : (
+              <button type="submit" disabled className="mb-[3px] grid h-[29px] w-[29px] shrink-0 place-items-center rounded-full bg-ph-out text-ph-out-ink opacity-30" aria-label="Send">
+                <ArrowUp className="h-[18px] w-[18px]" strokeWidth={3} />
+              </button>
+            )}
           </div>
         </form>
         {!fullscreen && <div className="pointer-events-none absolute bottom-2 left-1/2 h-[5px] w-32 -translate-x-1/2 rounded-full bg-ph-ink opacity-80" aria-hidden />}
