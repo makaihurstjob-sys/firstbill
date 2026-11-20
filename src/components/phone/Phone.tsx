@@ -4,6 +4,9 @@ import { cn } from "@/lib/utils";
 import type { FirstBillApi, Msg } from "@/hooks/useFirstBill";
 import { BankCard, ClockCard, LinkCard, NoticeAttachment, PlaidLogo, TimelineCard } from "./Cards";
 import type { Profile } from "@/lib/firstbill/data";
+import { HoldMenu, type Held } from "./HoldMenu";
+
+declare const __BUILD__: string;
 
 function useClock() {
   const [now, setNow] = useState(() => new Date());
@@ -78,7 +81,15 @@ function NotificationBanner({ title, body, full }: { title: string; body: string
   );
 }
 
-function Bubble({ from, text, tail }: { from: "me" | "bot"; text: string; tail: boolean }) {
+function Tapback({ e, me }: { e: string; me: boolean }) {
+  return (
+    <span className={cn("tb absolute -top-[18px] z-10 grid h-8 min-w-8 place-items-center rounded-full border-2 border-ph-bg px-1 text-[15px] shadow-sm", me ? "-left-4 bg-ph-in" : "-right-4 bg-ph-out")} aria-label={`Reacted ${e}`}>
+      {e}
+    </span>
+  );
+}
+
+function Bubble({ from, text, tail, tapback }: { from: "me" | "bot"; text: string; tail: boolean; tapback?: string }) {
   const me = from === "me";
   return (
     <div
@@ -89,11 +100,12 @@ function Bubble({ from, text, tail }: { from: "me" | "bot"; text: string; tail: 
       )}
     >
       <span>{text}</span>
+      {tapback && <Tapback e={tapback} me={me} />}
     </div>
   );
 }
 
-function Row({ m, next, api, onFile }: { m: Msg; next?: Msg; api: FirstBillApi; onFile: () => void }) {
+function Row({ m, next, api, onFile, tapback }: { m: Msg; next?: Msg; api: FirstBillApi; onFile: () => void; tapback?: string }) {
   if (m.kind === "divider") {
     return (
       <div className="pb-1 pt-3 text-center text-[12px] leading-4 text-ph-sub">
@@ -116,7 +128,7 @@ function Row({ m, next, api, onFile }: { m: Msg; next?: Msg; api: FirstBillApi; 
   let body: React.ReactNode;
   switch (m.kind) {
     case "text":
-      body = <Bubble from={from} text={m.text} tail={tail} />;
+      body = <Bubble from={from} text={m.text} tail={tail} tapback={tapback} />;
       break;
     case "notice":
       body = <NoticeAttachment title={m.title} servicer={m.servicer} text={m.text} />;
@@ -134,7 +146,7 @@ function Row({ m, next, api, onFile }: { m: Msg; next?: Msg; api: FirstBillApi; 
       body = <BankCard {...m} />;
       break;
     case "draft":
-      body = <DraftBubble text={m.text} tail={tail} />;
+      body = <DraftBubble text={m.text} tail={tail} tapback={tapback} />;
       break;
     case "file":
       body = (
@@ -151,15 +163,16 @@ function Row({ m, next, api, onFile }: { m: Msg; next?: Msg; api: FirstBillApi; 
             <b className="block truncate text-[14px]">{m.name}</b>
             <span className="text-[12px] opacity-80">{m.size} · Tap to view</span>
           </span>
+          {tapback && <Tapback e={tapback} me />}
         </button>
       );
       break;
   }
-  return <div className={cn("flex animate-bubble-in px-3", from === "me" ? "justify-end" : "justify-start", sameNext ? "pb-[2px]" : "pb-2")}>{body}</div>;
+  return <div data-msg={m.id} className={cn("flex animate-bubble-in px-3", from === "me" ? "justify-end" : "justify-start", sameNext ? "pb-[2px]" : "pb-2", tapback && "pt-4")}>{body}</div>;
 }
 
 /** The drafted message is just a text, like iMessage. Tap it to copy. */
-function DraftBubble({ text, tail }: { text: string; tail: boolean }) {
+function DraftBubble({ text, tail, tapback }: { text: string; tail: boolean; tapback?: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -174,6 +187,7 @@ function DraftBubble({ text, tail }: { text: string; tail: boolean }) {
     <div className="flex max-w-[75%] flex-col items-start">
       <button type="button" onClick={copy} data-draft className={cn("bubble whitespace-pre-wrap break-words rounded-[18px] bg-ph-in px-3 py-[6px] text-left text-[17px] leading-[22px] tracking-[-0.41px] text-ph-in-ink", tail && "tail-bot")}>
         <p>{text}</p>
+        {tapback && <Tapback e={tapback} me={false} />}
       </button>
       <span className="mt-1 pl-2 text-[11px] text-ph-sub">{copied ? "Copied" : "Tap to copy"}</span>
     </div>
@@ -306,6 +320,46 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
   // No custom dictation: like iMessage, the keyboard's own mic does it (and iOS shows no extra start/stop notices).
   const mic = { on: false, supported: true, toggle: () => input.current?.focus() };
   const [fileOpen, setFileOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [held, setHeld] = useState<Held | null>(null);
+  const [tapbacks, setTapbacks] = useState<Record<string, string>>({});
+  const press = useRef<{ t: number; x: number; y: number; fired: boolean } | null>(null);
+  useEffect(() => {
+    if (!api.msgs.length) setTapbacks({});
+  }, [api.msgs.length]);
+
+  const startPress = (e: React.PointerEvent) => {
+    const row = (e.target as HTMLElement).closest("[data-msg]") as HTMLElement | null;
+    if (!row) return;
+    const x = e.clientX;
+    const y = e.clientY;
+    const t = window.setTimeout(() => {
+      const bubble = (row.firstElementChild as HTMLElement | null) ?? row;
+      const root = rootRef.current?.getBoundingClientRect();
+      const r = bubble.getBoundingClientRect();
+      const m = api.msgs.find((x) => x.id === row.dataset.msg);
+      if (!root || !m || m.kind === "divider") return;
+      if (press.current) press.current.fired = true;
+      const text = m.kind === "text" || m.kind === "draft" ? m.text : m.kind === "link" ? `${m.title} (${m.url})` : m.kind === "file" ? m.name : m.kind === "notice" ? m.text : bubble.innerText;
+      navigator.vibrate?.(10);
+      setHeld({ id: m.id, me: "from" in m && m.from === "me", text, html: bubble.outerHTML.replace(/tail-(me|bot)/g, "").replace(/max-w-\[75%\]/g, ""), top: r.top - root.top, left: r.left - root.left, width: r.width, height: r.height });
+    }, 420);
+    press.current = { t, x, y, fired: false };
+  };
+  const movePress = (e: React.PointerEvent) => {
+    const p = press.current;
+    if (p && !p.fired && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) {
+      clearTimeout(p.t);
+      press.current = null;
+    }
+  };
+  const endPress = () => {
+    const p = press.current;
+    if (p && !p.fired) {
+      clearTimeout(p.t);
+      press.current = null;
+    }
+  };
 
   useEffect(() => {
     const el = scroller.current;
@@ -323,7 +377,7 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
 
   return (
     <div className={cn("phone-frame relative mx-auto w-full", fullscreen ? "h-full" : "max-w-[402px] sm:rounded-[58px] sm:bg-bezel sm:p-[11px] sm:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.45)]")}>
-      <div className={cn("relative flex flex-col overflow-hidden bg-ph-bg font-ios text-ph-ink", fullscreen ? "h-full" : "h-[min(820px,86dvh)] min-h-[600px] rounded-[28px] sm:h-[min(820px,calc(100dvh-64px))] sm:rounded-[48px]")}>
+      <div ref={rootRef} className={cn("relative flex flex-col overflow-hidden bg-ph-bg font-ios text-ph-ink", fullscreen ? "h-full" : "h-[min(820px,86dvh)] min-h-[600px] rounded-[28px] sm:h-[min(820px,calc(100dvh-64px))] sm:rounded-[48px]")}>
         {!fullscreen && (
           <>
             {/* dynamic island */}
@@ -334,16 +388,33 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
         {api.banner && <NotificationBanner title={api.banner.title} body={api.banner.body} full={fullscreen} />}
         <Header name={api.contactName} full={fullscreen} onReset={() => api.reset()} />
 
-        <div ref={scroller} className="no-scrollbar flex-1 overflow-y-auto pt-3" aria-live="polite">
+        <div
+          ref={scroller}
+          className="no-scrollbar flex-1 overflow-y-auto pt-3"
+          aria-live="polite"
+          onPointerDown={startPress}
+          onPointerMove={movePress}
+          onPointerUp={endPress}
+          onPointerCancel={endPress}
+          onContextMenu={(e) => e.preventDefault()}
+          onClickCapture={(e) => {
+            if (press.current?.fired) {
+              e.preventDefault();
+              e.stopPropagation();
+              press.current = null;
+            }
+          }}
+        >
           {api.msgs.length === 0 && (
             <div className="mx-6 mt-10 text-center text-ph-sub">
               <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-2xl bg-[#0b6b52] font-display text-2xl font-bold text-white">FB</div>
               <p className="text-[17px] font-semibold text-ph-ink">Text JOIN to start</p>
+              <p className="mt-6 text-[11px] text-ph-sub/70">Updated {new Date(__BUILD__).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</p>
               <p className="mt-1 text-[14px] leading-snug">FirstBill texts you before a student loan bill goes wrong. No app.</p>
             </div>
           )}
           {api.msgs.map((m, i) => (
-            <Row key={m.id} m={m} next={api.msgs[i + 1]} api={api} onFile={() => setFileOpen(true)} />
+            <Row key={m.id} m={m} next={api.msgs[i + 1]} api={api} onFile={() => setFileOpen(true)} tapback={tapbacks[m.id]} />
           ))}
           {lastIsMine && <div className="-mt-1 px-4 pb-2 text-right text-[11px] text-ph-sub">Delivered</div>}
           {api.typing && <Typing />}
@@ -429,6 +500,21 @@ export function Phone({ api, fullscreen }: { api: FirstBillApi; fullscreen?: boo
         </form>
         {!fullscreen && <div className="pointer-events-none absolute bottom-2 left-1/2 h-[5px] w-32 -translate-x-1/2 rounded-full bg-ph-ink opacity-80" aria-hidden />}
 
+        {held && (
+          <HoldMenu
+            held={held}
+            areaHeight={rootRef.current?.clientHeight ?? 700}
+            onClose={() => setHeld(null)}
+            onTapback={(t) => {
+              setTapbacks((prev) => ({ ...prev, [held.id]: prev[held.id] === t ? "" : t }));
+              setHeld(null);
+            }}
+            onReply={() => {
+              setHeld(null);
+              input.current?.focus();
+            }}
+          />
+        )}
         {fileOpen && <AidFileSheet profile={api.profile} onClose={() => setFileOpen(false)} />}
         {api.plaidOpen && <PlaidSheet onClose={() => api.setPlaidOpen(false)} onDone={() => void api.plaidDone()} />}
       </div>
