@@ -4,7 +4,9 @@
 
 **Before you start:** open PayPing from the Home Screen, tap ↻ (top right) to start over. The start screen says "Updated <time>" so you know it's the newest build. The chat saves itself, so leaving the app and coming back picks up where you were. Only ↻ clears it.
 
-Every reply from PayPing ends with a small "This is not financial advice." line.
+Every reply from PayPing ends with its own short text: "This is not financial advice."
+
+The buttons above the keyboard are labeled "(Simulated replies. You can also type your own.)" Real iMessage has no suggested replies, so say: "These just save typing for the demo. You can type anything."
 
 ---
 
